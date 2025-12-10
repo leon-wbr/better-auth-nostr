@@ -1,9 +1,45 @@
 import type { BetterAuthClientPlugin, ClientStore } from "@better-auth/core";
 import type { BetterFetch } from "@better-fetch/fetch";
 import type { Session, User } from "better-auth";
+import { finalizeEvent, nip19 } from "nostr-tools";
 import { getToken } from "nostr-tools/nip98";
 import type { nostr } from ".";
 import type { Nostr } from "./types";
+import { hexToBytes } from "nostr-tools/utils";
+
+const parseSecretKey = (input: string) => {
+  const trimmed = input.trim();
+  if (trimmed === "") {
+    throw new Error("Missing NSEC private key");
+  }
+
+  const candidate = trimmed.toLowerCase();
+
+  if (nip19.NostrTypeGuard.isNSec(candidate)) {
+    const decoded = nip19.decode(candidate);
+    if (decoded.type !== "nsec") {
+      throw new Error("Invalid NSEC private key");
+    }
+
+    return decoded.data;
+  }
+
+  if (/^[a-f0-9]{64}$/i.test(trimmed)) {
+    return hexToBytes(trimmed);
+  }
+
+  throw new Error("Invalid NSEC private key");
+};
+
+const getTokenWithNsec = async (nsec: string) => {
+  const secretKey = parseSecretKey(nsec);
+  return getToken(
+    "http://testurl.com",
+    "post",
+    (event) => finalizeEvent(event, secretKey),
+    true
+  );
+};
 
 export const getNostrActions = (
   $fetch: BetterFetch,
@@ -13,18 +49,19 @@ export const getNostrActions = (
     $store: ClientStore;
   }
 ) => {
-  const signInNostr = async () => {
+  const getTokenWithExtension = async () => {
     if (!("nostr" in window)) {
       throw new Error("Nostr extension not found");
     }
 
     const sign = (window.nostr as any).signEvent.bind(window.nostr);
-    const token = await getToken(
-      "http://testurl.com",
-      "post",
-      (e) => sign(e),
-      true
-    );
+    return getToken("http://testurl.com", "post", (e) => sign(e), true);
+  };
+
+  const signInNostr = async (options?: { nsec?: string }) => {
+    const token = options?.nsec
+      ? await getTokenWithNsec(options.nsec)
+      : await getTokenWithExtension();
 
     try {
       const response = await $fetch<{
