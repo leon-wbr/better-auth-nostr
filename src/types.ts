@@ -10,6 +10,7 @@ export interface NostrOptions {
     createdAt?: string;
   };
 }
+
 export interface Nostr {}
 
 export type NostrPubkey = {

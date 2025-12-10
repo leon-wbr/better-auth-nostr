@@ -1,10 +1,10 @@
 import { createAuthEndpoint } from "@better-auth/core/api";
-import { APIError, freshSessionMiddleware } from "better-auth/api";
+import type { User } from "better-auth";
+import { APIError } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { nip19 } from "nostr-tools";
 import { unpackEventFromToken, validateEvent } from "nostr-tools/nip98";
 import type { NostrOptions, NostrPubkey } from "./types";
-import type { User } from "better-auth";
 
 export const loginNostr = (opts?: NostrOptions) =>
   createAuthEndpoint(
@@ -35,9 +35,6 @@ export const loginNostr = (opts?: NostrOptions) =>
       },
     },
     async (ctx) => {
-      ctx.context.logger.info("Nostr login endpoint called");
-      console.log("Handling Nostr login request");
-
       const token = ctx.headers?.get("authorization") || "";
       if (!token) {
         throw new APIError("BAD_REQUEST", {
@@ -45,22 +42,21 @@ export const loginNostr = (opts?: NostrOptions) =>
         });
       }
 
-      console.log("Received Nostr login request with token:", token);
-
       const event = await unpackEventFromToken(token).catch((error) => {
         throw new APIError("BAD_REQUEST", {
           message: error.message || "Invalid token",
         });
       });
 
-      console.log("Unpacked Nostr event:", event);
-      await validateEvent(event, "http://testurl.com", "post").catch(
-        (error) => {
-          throw new APIError("UNAUTHORIZED", {
-            message: error.message || "Invalid event",
-          });
-        }
-      );
+      const loginUrl = new URL(ctx.request?.url ?? "");
+      loginUrl.search = "";
+      loginUrl.hash = "";
+
+      await validateEvent(event, loginUrl.toString(), "post").catch((error) => {
+        throw new APIError("UNAUTHORIZED", {
+          message: error.message || "Invalid event",
+        });
+      });
 
       let nostrPubkey = await ctx.context.adapter.findOne<NostrPubkey>({
         model: "nostrPubkey",
@@ -74,7 +70,6 @@ export const loginNostr = (opts?: NostrOptions) =>
           message: "Nostr pubkey not registered",
         });
       } else if (!nostrPubkey) {
-        console.log("Creating new user for Nostr pubkey", event.pubkey);
         const pubkeyData = {
           publicKey: event.pubkey,
           createdAt: new Date(),

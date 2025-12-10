@@ -1,11 +1,23 @@
-import type { BetterAuthClientPlugin, ClientStore } from "@better-auth/core";
+import type {
+  BetterAuthClientOptions,
+  BetterAuthClientPlugin,
+  ClientStore,
+} from "@better-auth/core";
 import type { BetterFetch } from "@better-fetch/fetch";
 import type { Session, User } from "better-auth";
 import { finalizeEvent, nip19 } from "nostr-tools";
 import { getToken } from "nostr-tools/nip98";
+import { hexToBytes } from "nostr-tools/utils";
 import type { nostr } from ".";
 import type { Nostr } from "./types";
-import { hexToBytes } from "nostr-tools/utils";
+
+const getLoginUrl = (options?: BetterAuthClientOptions) => {
+  const baseURL =
+    options?.baseURL ||
+    (typeof window !== "undefined" ? window.location.origin : "");
+  const basePath = options?.basePath || "/api/auth";
+  return `${baseURL}${basePath}/nostr/login`;
+};
 
 const parseSecretKey = (input: string) => {
   const trimmed = input.trim();
@@ -31,34 +43,38 @@ const parseSecretKey = (input: string) => {
   throw new Error("Invalid NSEC private key");
 };
 
-const getTokenWithNsec = async (nsec: string) => {
-  const secretKey = parseSecretKey(nsec);
-  return getToken(
-    "http://testurl.com",
-    "post",
-    (event) => finalizeEvent(event, secretKey),
-    true
-  );
-};
-
 export const getNostrActions = (
   $fetch: BetterFetch,
   {
     $store,
   }: {
     $store: ClientStore;
-  }
+  },
+  options?: BetterAuthClientOptions
 ) => {
+  const loginUrl = getLoginUrl(options);
+
+  const getTokenWithNsec = async (nsec: string) => {
+    const secretKey = parseSecretKey(nsec);
+    return getToken(
+      loginUrl,
+      "post",
+      (event) => finalizeEvent(event, secretKey),
+      true
+    );
+  };
+
   const getTokenWithExtension = async () => {
     if (!("nostr" in window)) {
       throw new Error("Nostr extension not found");
     }
 
     const sign = (window.nostr as any).signEvent.bind(window.nostr);
-    return getToken("http://testurl.com", "post", (e) => sign(e), true);
+    return getToken(loginUrl, "post", (e) => sign(e), true);
   };
 
   const signInNostr = async (options?: { nsec?: string }) => {
+    console.log(loginUrl);
     const token = options?.nsec
       ? await getTokenWithNsec(options.nsec)
       : await getTokenWithExtension();
@@ -112,7 +128,8 @@ export const nostrClient = () => {
   return {
     id: "nostr",
     $InferServerPlugin: {} as ReturnType<typeof nostr>,
-    getActions: ($fetch, $store) => getNostrActions($fetch, { $store }),
+    getActions: ($fetch, $store, options) =>
+      getNostrActions($fetch, { $store }, options),
     pathMethods: {
       "/nostr/login": "POST",
       "/nostr/add-pubkey": "POST",

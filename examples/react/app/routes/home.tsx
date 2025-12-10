@@ -1,7 +1,6 @@
 import { useState } from "react";
-import type { Route } from "./+types/home";
-import { authClient } from "~/lib/auth";
 import Button from "~/components/ui/Button";
+import { authClient } from "~/lib/auth";
 
 const isDate = (key: string): boolean =>
   ["createdAt", "expiresAt", "updatedAt"].some(
