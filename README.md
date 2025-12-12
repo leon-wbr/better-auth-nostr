@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  A thin, standards-aware bridge that lets Better Auth authenticate with Nostr (NIP-98) and keeps pubkeys synced with your users.
+  A thin, standards-aware bridge that lets [Better Auth](https://www.better-auth.com/) authenticate with Nostr ([NIP-98](https://github.com/nostr-protocol/nips/blob/master/98.md)) and keeps pubkeys synced with your users.
 </p>
 
 <p align="center">
