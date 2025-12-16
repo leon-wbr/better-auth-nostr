@@ -54,30 +54,46 @@ export const getNostrActions = (
 ) => {
   const loginUrl = getLoginUrl(options);
 
-  const getTokenWithNsec = async (nsec: string) => {
+  const fetchNonce = async () => {
+    const { data } = await $fetch<{ nonce: string }>("/nostr/nonce", {
+      method: "GET",
+    });
+    const nonce = data?.nonce;
+    if (!nonce) {
+      throw new Error("Failed to fetch nonce");
+    }
+    return nonce;
+  };
+
+  const getTokenWithNsec = async (
+    nsec: string,
+    payload: Record<string, unknown>
+  ) => {
     const secretKey = parseSecretKey(nsec);
     return getToken(
       loginUrl,
       "post",
       (event) => finalizeEvent(event, secretKey),
-      true
+      true,
+      payload
     );
   };
 
-  const getTokenWithExtension = async () => {
+  const getTokenWithExtension = async (payload: Record<string, unknown>) => {
     if (!("nostr" in window)) {
       throw new Error("Nostr extension not found");
     }
 
     const sign = (window.nostr as any).signEvent.bind(window.nostr);
-    return getToken(loginUrl, "post", (e) => sign(e), true);
+    return getToken(loginUrl, "post", (e) => sign(e), true, payload);
   };
 
   const signInNostr = async (options?: { nsec?: string }) => {
-    console.log(loginUrl);
+    const nonce = await fetchNonce();
+    const payload = { nonce };
     const token = options?.nsec
-      ? await getTokenWithNsec(options.nsec)
-      : await getTokenWithExtension();
+      ? await getTokenWithNsec(options.nsec, payload)
+      : await getTokenWithExtension(payload);
 
     try {
       const response = await $fetch<{
@@ -89,6 +105,9 @@ export const getNostrActions = (
           authorization: token,
           "content-type": "application/json",
         },
+        body: JSON.stringify({
+          nonce,
+        }),
       });
 
       $store.notify("$sessionSignal");
@@ -131,6 +150,7 @@ export const nostrClient = () => {
     getActions: ($fetch, $store, options) =>
       getNostrActions($fetch, { $store }, options),
     pathMethods: {
+      "/nostr/nonce": "GET",
       "/nostr/login": "POST",
       "/nostr/add-pubkey": "POST",
     },

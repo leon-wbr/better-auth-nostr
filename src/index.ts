@@ -1,11 +1,12 @@
 import type { BetterAuthPlugin } from "better-auth";
-import { loginNostr } from "./routes";
+import { getNostrNonce, loginNostr } from "./routes";
 import type { NostrOptions } from "./types";
 
 export const nostr = (options?: NostrOptions | undefined) => {
   return {
     id: "nostr",
     endpoints: {
+      getNostrNonce: getNostrNonce(options),
       loginNostr: loginNostr(options),
       // addPubkey: addPubkey(options),
     },

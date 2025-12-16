@@ -3,6 +3,10 @@ export interface NostrOptions {
   /** @todo Implement requestSignup */
   disableImplicitSignUp?: boolean;
   modelName?: string;
+  /**
+   * Nonce time-to-live in milliseconds. Defaults to 5 minutes.
+   */
+  nonceTtlMs?: number;
   fields?: {
     name?: string;
     publicKey?: string;

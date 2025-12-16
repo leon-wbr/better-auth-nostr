@@ -2,20 +2,85 @@ import { createAuthEndpoint } from "@better-auth/core/api";
 import type { User } from "better-auth";
 import { APIError } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
+import { randomBytes } from "node:crypto";
 import { nip19 } from "nostr-tools";
 import { unpackEventFromToken, validateEvent } from "nostr-tools/nip98";
 import type { NostrOptions, NostrPubkey } from "./types";
+
+const nonceStore = new Map<string, number>();
+const DEFAULT_NONCE_TTL = 5 * 60 * 1000;
+
+const createNonce = (ttlMs: number) => {
+  const nonce = randomBytes(16).toString("hex");
+  nonceStore.set(nonce, Date.now() + ttlMs);
+  return nonce;
+};
+
+const consumeNonce = (nonce: string) => {
+  const expiresAt = nonceStore.get(nonce);
+  if (!expiresAt) {
+    return false;
+  }
+  return expiresAt > Date.now();
+};
+
+export const getNostrNonce = (opts?: NostrOptions) =>
+  createAuthEndpoint(
+    "/nostr/nonce",
+    {
+      method: "GET",
+      metadata: {
+        openapi: {
+          operationId: "getNostrNonce",
+          description: "Get a one-time nonce for Nostr login",
+          responses: {
+            200: {
+              description: "Success",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      nonce: { type: "string" },
+                    },
+                    required: ["nonce"],
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (ctx) => {
+      const nonce = createNonce(opts?.nonceTtlMs ?? DEFAULT_NONCE_TTL);
+      return ctx.json({ nonce }, { status: 200 });
+    }
+  );
 
 export const loginNostr = (opts?: NostrOptions) =>
   createAuthEndpoint(
     "/nostr/login",
     {
       method: "POST",
-      disableBody: true,
       metadata: {
         openapi: {
           operationId: "loginNostr",
           description: "Login using Nostr (NIP-98)",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["nonce"],
+                  properties: {
+                    nonce: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
           responses: {
             200: {
               description: "Success",
@@ -42,6 +107,20 @@ export const loginNostr = (opts?: NostrOptions) =>
         });
       }
 
+      const body = (ctx.body || {}) as { nonce?: string };
+      const nonce = typeof body.nonce === "string" ? body.nonce.trim() : "";
+      if (!nonce) {
+        throw new APIError("BAD_REQUEST", {
+          message: "Missing nonce",
+        });
+      }
+
+      if (!consumeNonce(nonce)) {
+        throw new APIError("BAD_REQUEST", {
+          message: "Invalid or expired nonce",
+        });
+      }
+
       const event = await unpackEventFromToken(token).catch((error) => {
         throw new APIError("BAD_REQUEST", {
           message: error.message || "Invalid token",
@@ -52,11 +131,13 @@ export const loginNostr = (opts?: NostrOptions) =>
       loginUrl.search = "";
       loginUrl.hash = "";
 
-      await validateEvent(event, loginUrl.toString(), "post").catch((error) => {
-        throw new APIError("UNAUTHORIZED", {
-          message: error.message || "Invalid event",
-        });
-      });
+      await validateEvent(event, loginUrl.toString(), "post", { nonce }).catch(
+        (error) => {
+          throw new APIError("UNAUTHORIZED", {
+            message: error.message || "Invalid event",
+          });
+        }
+      );
 
       let nostrPubkey = await ctx.context.adapter.findOne<NostrPubkey>({
         model: "nostrPubkey",

@@ -48,6 +48,8 @@ The action sends the resulting token in the `Authorization` header to `/nostr/lo
 3. finds or creates a `nostrPubkey` record tied to a Better Auth user or creates a new user,
 4. issues a session and sets the cookie.
 
+Each login request includes a nonce in both the signed NIP-98 payload and the JSON body so replayed tokens are rejected by payload validation.
+
 This flow keeps the Nostr login path centralized and fully compatible with the rest of Better Auth.
 
 ## Configuration Options
@@ -58,6 +60,7 @@ This flow keeps the Nostr login path centralized and fully compatible with the r
 | `disableImplicitSignUp` | Do not auto-create a Better Auth user for a new pubkey (requires pre-registration). |
 | `modelName`             | Override the `nostrPubkey` model name registered in the schema.                     |
 | `fields`                | Customize the field names used for `name`, `publicKey`, `userId`, and `createdAt`.  |
+| `nonceTtlMs`            | Override the nonce time-to-live used for replay protection (default 5 minutes).     |
 
 The plugin exports its schema so the underlying adapter creates indexes and references to `user`.
 
