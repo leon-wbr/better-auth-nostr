@@ -54,9 +54,12 @@ export const getNostrActions = (
 ) => {
   const loginUrl = getLoginUrl(options);
 
-  const fetchNonce = async () => {
+  const fetchNonce = async (publicKey: string) => {
     const { data } = await $fetch<{ nonce: string }>("/nostr/nonce", {
-      method: "GET",
+      method: "POST",
+      body: {
+        publicKey,
+      },
     });
     const nonce = data?.nonce;
     if (!nonce) {
@@ -88,8 +91,25 @@ export const getNostrActions = (
     return getToken(loginUrl, "post", (e) => sign(e), true, payload);
   };
 
+  const getPublicKey = async (nsec?: string) => {
+    if ("nostr" in window) {
+      return await (window.nostr as any).getPublicKey();
+    }
+
+    if (nsec) {
+      return getPublicKey(nsec);
+    }
+
+    return null;
+  };
+
   const signInNostr = async (options?: { nsec?: string }) => {
-    const nonce = await fetchNonce();
+    const publicKey = await getPublicKey(options?.nsec);
+    if (!publicKey) {
+      throw new Error("Failed to determine public key.");
+    }
+
+    const nonce = await fetchNonce(publicKey);
     const payload = { nonce };
     const token = options?.nsec
       ? await getTokenWithNsec(options.nsec, payload)
@@ -103,11 +123,10 @@ export const getNostrActions = (
         method: "POST",
         headers: {
           authorization: token,
-          "content-type": "application/json",
         },
-        body: JSON.stringify({
+        body: {
           nonce,
-        }),
+        },
       });
 
       $store.notify("$sessionSignal");

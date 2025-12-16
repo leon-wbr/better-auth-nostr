@@ -7,6 +7,11 @@ export interface NostrOptions {
    * Nonce time-to-live in milliseconds. Defaults to 5 minutes.
    */
   nonceTtlMs?: number;
+  /**
+   * Function to generate a unique nonce for each sign-in attempt.
+   * You can implement this function to override the default nonce generator.
+   */
+  getNonce?: () => Promise<string>;
   fields?: {
     name?: string;
     publicKey?: string;

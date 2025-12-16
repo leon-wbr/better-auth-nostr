@@ -61,6 +61,7 @@ This flow keeps the Nostr login path centralized and fully compatible with the r
 | `modelName`             | Override the `nostrPubkey` model name registered in the schema.                     |
 | `fields`                | Customize the field names used for `name`, `publicKey`, `userId`, and `createdAt`.  |
 | `nonceTtlMs`            | Override the nonce time-to-live used for replay protection (default 5 minutes).     |
+| `getNonce`              | Override the default nonce generation function. Must return Promise<string>.        |
 
 The plugin exports its schema so the underlying adapter creates indexes and references to `user`.
 

@@ -7,32 +7,33 @@ import { nip19 } from "nostr-tools";
 import { unpackEventFromToken, validateEvent } from "nostr-tools/nip98";
 import type { NostrOptions, NostrPubkey } from "./types";
 
-const nonceStore = new Map<string, number>();
 const DEFAULT_NONCE_TTL = 5 * 60 * 1000;
 
-const createNonce = (ttlMs: number) => {
-  const nonce = randomBytes(16).toString("hex");
-  nonceStore.set(nonce, Date.now() + ttlMs);
-  return nonce;
-};
-
-const consumeNonce = (nonce: string) => {
-  const expiresAt = nonceStore.get(nonce);
-  if (!expiresAt) {
-    return false;
-  }
-  return expiresAt > Date.now();
-};
+const createDefaultNonce = () => randomBytes(16).toString("hex");
 
 export const getNostrNonce = (opts?: NostrOptions) =>
   createAuthEndpoint(
     "/nostr/nonce",
     {
-      method: "GET",
+      method: "POST",
       metadata: {
         openapi: {
           operationId: "getNostrNonce",
           description: "Get a one-time nonce for Nostr login",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["publicKey"],
+                  properties: {
+                    publicKey: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
           responses: {
             200: {
               description: "Success",
@@ -40,10 +41,10 @@ export const getNostrNonce = (opts?: NostrOptions) =>
                 "application/json": {
                   schema: {
                     type: "object",
+                    required: ["nonce"],
                     properties: {
                       nonce: { type: "string" },
                     },
-                    required: ["nonce"],
                   },
                 },
               },
@@ -53,7 +54,16 @@ export const getNostrNonce = (opts?: NostrOptions) =>
       },
     },
     async (ctx) => {
-      const nonce = createNonce(opts?.nonceTtlMs ?? DEFAULT_NONCE_TTL);
+      const { publicKey } = ctx.body;
+      const ttlMs = opts?.nonceTtlMs ?? DEFAULT_NONCE_TTL;
+      const nonce = (await opts?.getNonce?.()) ?? createDefaultNonce();
+
+      await ctx.context.internalAdapter.createVerificationValue({
+        identifier: `nostr:${publicKey}`,
+        expiresAt: new Date(Date.now() + ttlMs),
+        value: nonce,
+      });
+
       return ctx.json({ nonce }, { status: 200 });
     }
   );
@@ -76,6 +86,7 @@ export const loginNostr = (opts?: NostrOptions) =>
                   required: ["nonce"],
                   properties: {
                     nonce: { type: "string" },
+                    publicKey: { type: "string" },
                   },
                 },
               },
@@ -115,12 +126,6 @@ export const loginNostr = (opts?: NostrOptions) =>
         });
       }
 
-      if (!consumeNonce(nonce)) {
-        throw new APIError("BAD_REQUEST", {
-          message: "Invalid or expired nonce",
-        });
-      }
-
       const event = await unpackEventFromToken(token).catch((error) => {
         throw new APIError("BAD_REQUEST", {
           message: error.message || "Invalid token",
@@ -137,6 +142,26 @@ export const loginNostr = (opts?: NostrOptions) =>
             message: error.message || "Invalid event",
           });
         }
+      );
+
+      const verification =
+        await ctx.context.internalAdapter.findVerificationValue(
+          `nostr:${event.pubkey}`
+        );
+
+      if (
+        !verification ||
+        new Date() > verification.expiresAt ||
+        verification.value !== nonce
+      ) {
+        throw new APIError("UNAUTHORIZED", {
+          message: "Invalid or expired nonce",
+          status: 401,
+        });
+      }
+
+      await ctx.context.internalAdapter.deleteVerificationValue(
+        verification.id
       );
 
       let nostrPubkey = await ctx.context.adapter.findOne<NostrPubkey>({
