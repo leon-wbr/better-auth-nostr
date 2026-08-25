@@ -1,8 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
 import { betterAuth } from "better-auth";
-import Database from "better-sqlite3";
 import { nostr } from "better-auth-nostr";
-import fs from "fs";
-import path from "path";
+import Database from "better-sqlite3";
 
 // Create the database instance
 const db = new Database(":memory:");

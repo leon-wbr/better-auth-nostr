@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
 import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
 import { unpackEventFromToken } from "nostr-tools/nip98";
 import { bytesToHex } from "nostr-tools/utils";
+import { describe, expect, it } from "vitest";
 import { getNostrActions, parseSecretKey } from "../src/client";
 import {
   createTestAuth,
@@ -87,11 +87,9 @@ describe("client sign-in", () => {
     const keypair = makeKeypair();
     const { $store, notified } = createTestStore();
 
-    const actions = getNostrActions(
-      createTestFetch(auth),
-      { $store },
-      { baseURL: TEST_ORIGIN } as any,
-    );
+    const actions = getNostrActions(createTestFetch(auth), { $store }, {
+      baseURL: TEST_ORIGIN,
+    } as any);
 
     const result = await actions.signIn.nostr({ nsec: nsecFor(keypair) });
 
@@ -120,11 +118,9 @@ describe("client sign-in", () => {
     const keypair = makeKeypair();
     const { $store, notified } = createTestStore();
 
-    const actions = getNostrActions(
-      createTestFetch(auth),
-      { $store },
-      { baseURL: TEST_ORIGIN } as any,
-    );
+    const actions = getNostrActions(createTestFetch(auth), { $store }, {
+      baseURL: TEST_ORIGIN,
+    } as any);
 
     const result = await actions.signIn.nostr({ nsec: nsecFor(keypair) });
 
@@ -136,11 +132,9 @@ describe("client sign-in", () => {
     const auth = createTestAuth();
     const { $store } = createTestStore();
 
-    const actions = getNostrActions(
-      createTestFetch(auth),
-      { $store },
-      { baseURL: TEST_ORIGIN } as any,
-    );
+    const actions = getNostrActions(createTestFetch(auth), { $store }, {
+      baseURL: TEST_ORIGIN,
+    } as any);
 
     const result = await actions.signIn.nostr();
     expect(result.data).toBeNull();
@@ -153,11 +147,9 @@ describe("client sign-in", () => {
     const secondary = makeKeypair();
     const { $store } = createTestStore();
 
-    const actions = getNostrActions(
-      createTestFetch(auth),
-      { $store },
-      { baseURL: TEST_ORIGIN } as any,
-    );
+    const actions = getNostrActions(createTestFetch(auth), { $store }, {
+      baseURL: TEST_ORIGIN,
+    } as any);
 
     await actions.signIn.nostr({ nsec: nsecFor(primary) });
     const result = await actions.nostr.addPubkey({

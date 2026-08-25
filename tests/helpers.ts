@@ -1,7 +1,7 @@
 import type { ClientStore } from "@better-auth/core";
 import type { BetterFetch } from "@better-fetch/fetch";
 import { betterAuth } from "better-auth";
-import { memoryAdapter, type MemoryDB } from "better-auth/adapters/memory";
+import { type MemoryDB, memoryAdapter } from "better-auth/adapters/memory";
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools";
 import { getToken } from "nostr-tools/nip98";
 import { nostr } from "../src/index";

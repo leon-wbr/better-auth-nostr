@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools";
 import {
   getToken,
   unpackEventFromToken,
   validateEvent,
 } from "nostr-tools/nip98";
+import { describe, expect, it } from "vitest";
 
 describe("nip98 round-trip", () => {
   it("issues a token that unpacks and validates", async () => {

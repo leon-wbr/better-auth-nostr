@@ -4,7 +4,7 @@ import { authClient } from "~/lib/auth";
 
 const isDate = (key: string): boolean =>
   ["createdAt", "expiresAt", "updatedAt"].some(
-    (dateKey) => dateKey.toLowerCase() === key.toLowerCase()
+    (dateKey) => dateKey.toLowerCase() === key.toLowerCase(),
   );
 
 function RecursiveEntry({ value }: { value: any }) {
@@ -34,7 +34,7 @@ function RecursiveEntry({ value }: { value: any }) {
             </div>
             <div
               className={cellClassName(
-                typeof v !== "object" || v === null || isDate(k)
+                typeof v !== "object" || v === null || isDate(k),
               )}
             >
               {!isDate(k) ? (
