@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -22,6 +23,7 @@ jobs:
       - run: npm install -g npm@11.6.2
       - run: npm ci
       - name: Check tag matches package.json version
+        if: github.event_name == 'push'
         run: |
           expected="v$(node -p "require('./package.json').version")"
           if [ "$expected" != "$GITHUB_REF_NAME" ]; then
@@ -31,8 +33,24 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: npm publish
+      # npm runs the OIDC token exchange before it skips the upload, so a dry run
+      # proves the trusted publisher entry without publishing anything.
+      - name: Verify trusted publishing
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          npm publish --dry-run --loglevel verbose 2>&1 | tee dry-run.log || true
+          if grep -q 'Successfully retrieved and set token' dry-run.log; then
+            echo "Trusted publishing authenticated."
+          else
+            echo "::error::OIDC exchange did not return a token — check the npm trusted publisher entry for this repository and workflow file"
+            grep -E 'oidc|requires you to be logged in' dry-run.log || true
+            exit 1
+          fi
+      - name: Publish
+        if: github.event_name == 'push'
+        run: npm publish
       - name: Create GitHub release
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" --generate-notes
