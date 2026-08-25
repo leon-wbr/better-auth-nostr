@@ -15,7 +15,15 @@
     "test:watch": "vitest",
     "lint": "biome check . --error-on-warnings",
     "lint:fix": "biome check . --fix --unsafe",
-    "format": "biome format . --write"
+    "format": "biome format . --write",
+    "prepublishOnly": "npm run build"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=20"
   },
   "exports": {
     ".": {
