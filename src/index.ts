@@ -1,5 +1,5 @@
 import type { BetterAuthPlugin } from "better-auth";
-import { getNostrNonce, loginNostr } from "./routes";
+import { addPubkey, getNostrNonce, loginNostr } from "./routes";
 import type { NostrOptions } from "./types";
 
 export const nostr = (options?: NostrOptions) => {
@@ -8,7 +8,7 @@ export const nostr = (options?: NostrOptions) => {
     endpoints: {
       getNostrNonce: getNostrNonce(options),
       loginNostr: loginNostr(options),
-      // addPubkey: addPubkey(options),
+      addPubkey: addPubkey(options),
     },
     schema: {
       nostrPubkey: {
@@ -29,7 +29,7 @@ export const nostr = (options?: NostrOptions) => {
           userId: {
             type: "string",
             required: true,
-            references: { model: "user", field: "id" },
+            references: { model: "user", field: "id", onDelete: "cascade" },
             index: true,
             fieldName: options?.fields?.userId ?? "userId",
           },

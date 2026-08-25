@@ -1,5 +1,9 @@
 import type { User } from "better-auth";
-import { APIError, createAuthEndpoint } from "better-auth/api";
+import {
+  APIError,
+  createAuthEndpoint,
+  sessionMiddleware,
+} from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { randomBytes } from "node:crypto";
 import { nip19 } from "nostr-tools";
@@ -144,10 +148,13 @@ export const loginNostr = (opts?: NostrOptions) =>
         }
 
         const npub = nip19.npubEncode(event.pubkey);
+        const email =
+          (await opts?.generateEmail?.(npub, event.pubkey)) ??
+          `${npub}@nostr.local`;
 
         user = await ctx.context.internalAdapter.createUser(
           {
-            email: `${npub}@anchorman.lol`,
+            email,
             name: npub,
           },
           { method: "nostr" },
@@ -191,5 +198,102 @@ export const loginNostr = (opts?: NostrOptions) =>
 
       await setSessionCookie(ctx, { session, user });
       return ctx.json({ session, user }, { status: 200 });
+    },
+  );
+
+export const addPubkey = (opts?: NostrOptions) =>
+  createAuthEndpoint(
+    "/nostr/add-pubkey",
+    {
+      method: "POST",
+      use: [sessionMiddleware],
+      body: z.object({
+        nonce: z.string().min(1, "nonce is required"),
+        name: z.string().min(1).max(120).optional(),
+      }),
+      metadata: {
+        openapi: {
+          operationId: "addNostrPubkey",
+          description:
+            "Attach an additional Nostr pubkey to the authenticated user. " +
+            "Requires a fresh NIP-98 token in the Authorization header.",
+          responses: {
+            200: { description: "Pubkey linked." },
+            400: { description: "Bad request." },
+            401: { description: "Unauthorized." },
+            409: { description: "Pubkey already linked to another user." },
+          },
+        },
+      },
+    },
+    async (ctx) => {
+      const session = ctx.context.session;
+      if (!session) {
+        throw new APIError("UNAUTHORIZED", { message: "Not signed in" });
+      }
+
+      const token = ctx.headers?.get("authorization") ?? "";
+      if (!token) {
+        throw new APIError("BAD_REQUEST", {
+          message: "Missing NIP-98 authorization token",
+        });
+      }
+
+      const nonce = ctx.body.nonce.trim();
+      if (!nonce) {
+        throw new APIError("BAD_REQUEST", { message: "Missing nonce" });
+      }
+
+      const event = await unpackEventFromToken(token).catch((error) => {
+        throw new APIError("BAD_REQUEST", {
+          message: error?.message || "Invalid token",
+        });
+      });
+
+      const addUrl = buildEndpointUrl(ctx.context.baseURL, "/nostr/add-pubkey");
+      await validateEvent(event, addUrl, "post", { nonce }).catch((error) => {
+        throw new APIError("UNAUTHORIZED", {
+          message: error?.message || "Invalid NIP-98 event",
+        });
+      });
+
+      const verification =
+        await ctx.context.internalAdapter.consumeVerificationValue(
+          verificationKey(event.pubkey),
+        );
+
+      if (!verification || verification.value !== nonce) {
+        throw new APIError("UNAUTHORIZED", {
+          message: "Invalid or expired nonce",
+        });
+      }
+
+      const { model, pubkeyField } = resolveModel(opts);
+
+      const existing = await ctx.context.adapter.findOne<NostrPubkey>({
+        model,
+        where: [{ field: pubkeyField, value: event.pubkey }],
+      });
+
+      if (existing && existing.userId !== session.user.id) {
+        throw new APIError("CONFLICT", {
+          message: "Pubkey is already linked to another account",
+        });
+      }
+      if (existing) {
+        return ctx.json({ pubkey: existing }, { status: 200 });
+      }
+
+      const pubkey = await ctx.context.adapter.create<NostrPubkey>({
+        model,
+        data: {
+          publicKey: event.pubkey,
+          userId: session.user.id,
+          name: ctx.body.name,
+          createdAt: new Date(),
+        },
+      });
+
+      return ctx.json({ pubkey }, { status: 200 });
     },
   );

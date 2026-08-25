@@ -21,6 +21,11 @@ type SignInOptions = {
   nsec?: string;
 };
 
+type AddPubkeyOptions = SignInOptions & {
+  /** Optional display label stored alongside the pubkey row. */
+  name?: string;
+};
+
 type WindowNostr = {
   getPublicKey: () => Promise<string> | string;
   signEvent: (event: EventTemplate) => Promise<NostrEvent> | NostrEvent;
@@ -161,8 +166,38 @@ export const getNostrActions = (
     }
   };
 
+  const addPubkey = async (
+    addOptions?: AddPubkeyOptions,
+    fetchOptions?: BetterFetchOption,
+  ) => {
+    try {
+      const publicKey = await resolvePublicKey(addOptions?.nsec);
+      const nonce = await fetchNonce(publicKey);
+      const url = getEndpointUrl(options, "/nostr/add-pubkey");
+      const token = await mintToken(url, addOptions?.nsec, { nonce });
+
+      return await $fetch<{ pubkey: Nostr }>("/nostr/add-pubkey", {
+        method: "POST",
+        headers: { authorization: token },
+        body: { nonce, name: addOptions?.name },
+        ...fetchOptions,
+      });
+    } catch (err) {
+      return {
+        data: null,
+        error: {
+          code: "NOSTR_ADD_PUBKEY_FAILED",
+          message: err instanceof Error ? err.message : "Failed to add pubkey",
+          status: 400,
+          statusText: "BAD_REQUEST",
+        },
+      };
+    }
+  };
+
   return {
     signIn: { nostr: signInNostr },
+    nostr: { addPubkey },
     $Infer: {} as { Nostr: Nostr },
   };
 };
