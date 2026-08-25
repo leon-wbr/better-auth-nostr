@@ -7,11 +7,12 @@
   "module": "dist/index.mjs",
   "types": "dist/index.d.mts",
   "scripts": {
-    "test": "vitest",
+    "test": "vitest run",
     "coverage": "vitest run --coverage",
     "build": "tsdown",
     "dev": "tsdown --watch",
-    "typecheck": "tsc --project tsconfig.json"
+    "typecheck": "tsc --project tsconfig.test.json",
+    "test:watch": "vitest"
   },
   "exports": {
     ".": {

@@ -19,81 +19,104 @@ This plugin exposes both a server-side `nostr` plugin and a client helper so Bet
 
 - validate incoming NIP-98 tokens and create a session cookie without touching passwords or private keys,
 - persist each Nostr public key in a configurable `nostrPubkey` model so users retain a linked identity,
-- and re-use the same schema as a basis for additional pubkey management endpoints later.
+- link additional pubkeys to an existing account through an authenticated endpoint.
 
-It is designed to be as simple as possible, incorporating decentralized login flows into traditional apps.
+It is designed to be as simple as possible, dropping decentralized login flows into traditional apps with minimal wiring.
 
 ## Example
 
 ```ts
-import { defineAuthConfig } from "better-auth";
+import { betterAuth } from "better-auth";
 import { nostr } from "better-auth-nostr";
 
-export default defineAuthConfig({
-  plugins: [
-    nostr(),
-  ],
+export const auth = betterAuth({
+  plugins: [nostr()],
 });
 ```
 
-On the client, `authClient.signIn.nostr({ nsec?: string })` will automatically create and sign the event using:
+On the client:
 
-- a passed in nsec string, or if the argument hasn't been provided,
-- checks if a browser extension provides `window.nostr.signEvent`.
+```ts
+import { createAuthClient } from "better-auth/client";
+import { nostrClient } from "better-auth-nostr/client";
 
-The action sends the resulting token in the `Authorization` header to `/nostr/login`, and the endpoint
+export const authClient = createAuthClient({
+  plugins: [nostrClient()],
+});
+
+await authClient.signIn.nostr({ nsec });
+
+await authClient.nostr.addPubkey({ nsec, name: "Backup key" });
+```
+
+`signIn.nostr` will create and sign the NIP-98 event using:
+
+- a passed-in `nsec` string (bech32 or 64-char hex), or
+- a browser extension that exposes `window.nostr.signEvent` (NIP-07).
+
+The action sends the resulting token in the `Authorization` header to `/nostr/login`. The endpoint then:
 
 1. unpacks the event via `nostr-tools/nip98`,
-2. verifies the signature/relay URL pair,
-3. finds or creates a `nostrPubkey` record tied to a Better Auth user or creates a new user,
-4. issues a session and sets the cookie.
+2. verifies the signature against the canonical login URL,
+3. atomically consumes the issued nonce so it cannot be replayed,
+4. finds or creates a `nostrPubkey` row tied to a Better Auth user,
+5. issues a session and sets the cookie.
 
-Each login request includes a nonce in both the signed NIP-98 payload and the JSON body so replayed tokens are rejected by payload validation.
+Each login request carries a nonce in both the signed NIP-98 payload and the JSON body, so tampering with either side fails validation. The nonce is single-use — consumed atomically on the server.
 
-This flow keeps the Nostr login path centralized and fully compatible with the rest of Better Auth.
+`nostr.addPubkey` follows the same flow against `/nostr/add-pubkey`: it fetches a nonce for the new key, signs a NIP-98 event with it, and sends it alongside the existing session cookie. The endpoint requires both a valid session and a fresh single-use nonce, so an intercepted token cannot be replayed to attach someone else's key. Linking a pubkey that the signed-in user already owns is a no-op; linking one owned by another account returns `409`.
+
+Because the signed event is bound to the endpoint URL, the client has to sign against `baseURL + basePath` — the same URL the server validates against. If you mount Better Auth somewhere other than the default `/api/auth`, pass `basePath` to `createAuthClient` so the two agree.
+
+## Requirements
+
+Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerificationValue`, which was introduced in 1.7.0.
 
 ## Configuration Options
 
-| Option                  | Description                                                                         |
-| ----------------------- | ----------------------------------------------------------------------------------- |
-| `disableSignUp`         | Placeholder for future request-based signup gating.                                 |
-| `disableImplicitSignUp` | Do not auto-create a Better Auth user for a new pubkey (requires pre-registration). |
-| `modelName`             | Override the `nostrPubkey` model name registered in the schema.                     |
-| `fields`                | Customize the field names used for `name`, `publicKey`, `userId`, and `createdAt`.  |
-| `nonceTtlMs`            | Override the nonce time-to-live used for replay protection (default 5 minutes).     |
-| `getNonce`              | Override the default nonce generation function. Must return Promise<string>.        |
+| Option                  | Description                                                                                     |
+| ----------------------- | ----------------------------------------------------------------------------------------------- |
+| `disableSignUp`         | Reserved for future request-gated signup flows. Currently a no-op.                              |
+| `disableImplicitSignUp` | Reject logins from unseen pubkeys instead of auto-creating a Better Auth user.                  |
+| `modelName`             | Override the `nostrPubkey` model name registered in the schema.                                 |
+| `fields`                | Customize field names for `name`, `publicKey`, `userId`, and `createdAt`.                       |
+| `nonceTtlMs`            | Nonce time-to-live in milliseconds. Defaults to 5 minutes.                                      |
+| `getNonce`              | Custom nonce generator. Must return `Promise<string>`.                                          |
+| `generateEmail`         | Customize the email used when implicitly creating a user. Receives the npub and the hex pubkey. |
 
-The plugin exports its schema so the underlying adapter creates indexes and references to `user`.
+The plugin exports its schema so the underlying adapter sets up indexes and the foreign key to `user` automatically.
 
 ## Development
 
 ```bash
 npm install
-npm run build   # compile sources into dist via tsdown
-npm run dev     # tsdown --watch for local testing
+npm run build       # compile sources into dist via tsdown
+npm run dev         # tsdown --watch for local testing
 npm run typecheck
-npm run test
+npm test
+npm run test:watch
 npm run coverage
 ```
-Developers can inspect `examples/react` for a Vite + Better Auth sandbox (it includes its own auth server + migrations) or refer to `src/client.ts`/`src/routes.ts` to understand the actions and endpoint wiring.
+
+See `src/routes.ts` and `src/client.ts` for the endpoint and action wiring, and `tests/` for end-to-end examples that boot Better Auth against the in-memory adapter. `examples/react` holds a Vite + Better Auth sandbox with its own auth server and migrations.
 
 ## Why It Matters
 
-Most Nostr logins today live in bespoke, ad-hoc integrations. Breaking that effort into a reusable Better Auth plugin lets web teams:
+Most Nostr logins today live in bespoke, one-off integrations. Packaging it as a Better Auth plugin lets teams:
 
-- simply implement decentralized authentication into traditional auth flows with Better Auth,
-- easily use Better Auth for Nostr apps and save valuable development time.
+- add decentralized authentication next to their existing auth flows with a single import,
+- run Nostr-first apps on Better Auth without rebuilding session, cookie, and schema plumbing.
 
 ## Project Status
 
-- Stage: early feature work with focus on login + schema.
-- Contributions that expand (e.g., pubkey revocation, multi-key management) or polish docs are welcome.
+- Stage: early but stable for login and basic pubkey management.
+- Contributions that extend the feature set (e.g. pubkey revocation, multi-key UX, profile sync from relays) or polish the docs are welcome.
 
 ## Get Involved
 
-- Test the plugin inside your Better Auth app and report bugs at [github.com/leon-wbr/better-auth-nostr/issues](https://github.com/leon-wbr/better-auth-nostr/issues).
-- Open a pull request to add new client actions, extend the schema, or improve docs.
-- Share ideas for future Nostr flows (e.g., relays discovery, profile sync) using the issue tracker.
+- Try the plugin in your Better Auth app and report bugs at [github.com/leon-wbr/better-auth-nostr/issues](https://github.com/leon-wbr/better-auth-nostr/issues).
+- Open a pull request to add client actions, extend the schema, or improve docs.
+- Share ideas for future Nostr flows on the issue tracker.
 
 ## License
 
