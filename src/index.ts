@@ -2,7 +2,7 @@ import type { BetterAuthPlugin } from "better-auth";
 import { getNostrNonce, loginNostr } from "./routes";
 import type { NostrOptions } from "./types";
 
-export const nostr = (options?: NostrOptions | undefined) => {
+export const nostr = (options?: NostrOptions) => {
   return {
     id: "nostr",
     endpoints: {
@@ -11,20 +11,20 @@ export const nostr = (options?: NostrOptions | undefined) => {
       // addPubkey: addPubkey(options),
     },
     schema: {
-      nostrPubkeys: {
-        modelName: options?.modelName || "nostrPubkey",
+      nostrPubkey: {
+        modelName: options?.modelName ?? "nostrPubkey",
         fields: {
           name: {
             type: "string",
             required: false,
-            fieldName: options?.fields?.name || "name",
+            fieldName: options?.fields?.name ?? "name",
           },
           publicKey: {
             type: "string",
             required: true,
             unique: true,
             index: true,
-            fieldName: options?.fields?.publicKey || "publicKey",
+            fieldName: options?.fields?.publicKey ?? "publicKey",
           },
           userId: {
             type: "string",
@@ -36,7 +36,7 @@ export const nostr = (options?: NostrOptions | undefined) => {
           createdAt: {
             type: "date",
             required: true,
-            fieldName: options?.fields?.createdAt || "createdAt",
+            fieldName: options?.fields?.createdAt ?? "createdAt",
           },
         },
       },
