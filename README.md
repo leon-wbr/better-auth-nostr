@@ -100,6 +100,19 @@ npm run coverage
 
 See `src/routes.ts` and `src/client.ts` for the endpoint and action wiring, and `tests/` for end-to-end examples that boot Better Auth against the in-memory adapter. `examples/react` holds a Vite + Better Auth sandbox with its own auth server and migrations.
 
+### Releasing
+
+Releases are cut from a tag and published by `.github/workflows/release.yml`. There is nothing to run by hand:
+
+```bash
+npm version minor        # bumps package.json, commits, tags v0.3.0
+git push --follow-tags
+```
+
+The workflow refuses to publish if the tag and `package.json` version disagree, then typechecks, tests, builds, publishes to npm, and opens a GitHub release with generated notes. It authenticates through npm trusted publishing (OIDC), so there is no token in the repository and every tarball carries a provenance attestation.
+
+Running the same workflow manually (Actions → Release → Run workflow) does everything except publish: it performs the real OIDC token exchange through `npm publish --dry-run` and fails if npm does not hand back a token. Use it to confirm the trusted publisher entry still works before cutting a tag.
+
 ## Why It Matters
 
 Most Nostr logins today live in bespoke, one-off integrations. Packaging it as a Better Auth plugin lets teams:
@@ -120,4 +133,4 @@ Most Nostr logins today live in bespoke, one-off integrations. Packaging it as a
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
