@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { User } from "better-auth";
 import {
   APIError,
@@ -5,7 +6,6 @@ import {
   sessionMiddleware,
 } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
-import { randomBytes } from "node:crypto";
 import { nip19 } from "nostr-tools";
 import { unpackEventFromToken, validateEvent } from "nostr-tools/nip98";
 import * as z from "zod";

@@ -8,6 +8,11 @@
   "files": {
     "ignoreUnknown": false
   },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
   "formatter": {
     "enabled": true,
     "indentStyle": "space",
@@ -31,5 +36,34 @@
         "organizeImports": "on"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["tests/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off"
+          },
+          "suspicious": {
+            "noExplicitAny": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["examples/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noNonNullAssertion": "off"
+          },
+          "suspicious": {
+            "noExplicitAny": "off",
+            "noArrayIndexKey": "off"
+          }
+        }
+      }
+    }
+  ]
 }

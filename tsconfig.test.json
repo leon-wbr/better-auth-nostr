@@ -8,8 +8,5 @@
     "noEmit": true,
     "customConditions": []
   },
-  "include": [
-    "./src",
-    "./tests"
-  ]
+  "include": ["./src", "./tests"]
 }

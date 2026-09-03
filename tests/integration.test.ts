@@ -198,9 +198,7 @@ describe("POST /nostr/add-pubkey", () => {
     const auth = createTestAuth();
     const keypair = makeKeypair();
 
-    await expect(
-      linkPubkey(auth, new Headers(), keypair),
-    ).rejects.toThrow();
+    await expect(linkPubkey(auth, new Headers(), keypair)).rejects.toThrow();
   });
 
   it("rejects a replayed add-pubkey token", async () => {
@@ -233,9 +231,9 @@ describe("POST /nostr/add-pubkey", () => {
     const loginB = await performLogin(auth, userB);
     const sessionHeaders = cookiesFromResponse(loginB);
 
-    await expect(
-      linkPubkey(auth, sessionHeaders, userA),
-    ).rejects.toThrow(/already linked/);
+    await expect(linkPubkey(auth, sessionHeaders, userA)).rejects.toThrow(
+      /already linked/,
+    );
   });
 
   it("is idempotent for a pubkey the same user already owns", async () => {

@@ -5,11 +5,11 @@ import type {
 } from "@better-auth/core";
 import type { BetterFetch, BetterFetchOption } from "@better-fetch/fetch";
 import {
-  finalizeEvent,
   getPublicKey as derivePublicKey,
-  nip19,
-  type Event as NostrEvent,
   type EventTemplate,
+  finalizeEvent,
+  type Event as NostrEvent,
+  nip19,
 } from "nostr-tools";
 import { getToken } from "nostr-tools/nip98";
 import { hexToBytes } from "nostr-tools/utils";
