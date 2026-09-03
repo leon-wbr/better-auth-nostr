@@ -68,6 +68,8 @@ Each login request carries a nonce in both the signed NIP-98 payload and the JSO
 
 Because the signed event is bound to the endpoint URL, the client has to sign against `baseURL + basePath` — the same URL the server validates against. If you mount Better Auth somewhere other than the default `/api/auth`, pass `basePath` to `createAuthClient` so the two agree.
 
+Set `baseURL` on the server as well. The event is validated against `ctx.context.baseURL`, and when that is neither configured nor supplied through `BETTER_AUTH_URL`, Better Auth derives it from the incoming request — which means a `Host` header an attacker controls decides the URL the signature is checked against. Configuring `baseURL` is what makes that binding meaningful behind a proxy.
+
 ## Requirements
 
 Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerificationValue`, which was introduced in 1.7.0.

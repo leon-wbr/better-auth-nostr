@@ -6,15 +6,17 @@
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",
-    "typecheck": "react-router typegen && tsc"
+    "typecheck": "react-router typegen && tsc",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@react-router/node": "7.10.1",
     "@react-router/serve": "7.10.1",
-    "better-auth": "^1.4.6",
+    "better-auth": "^1.7.0",
     "better-auth-nostr": "file:../../",
     "better-sqlite3": "^12.5.0",
     "isbot": "^5.1.31",
+    "nostr-tools": "^2.19.3",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-router": "7.10.1"
