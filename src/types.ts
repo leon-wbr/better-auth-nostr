@@ -12,6 +12,11 @@ export interface NostrOptions {
    * You can implement this function to override the default nonce generator.
    */
   getNonce?: () => Promise<string>;
+  /**
+   * Customize the email assigned to a user created via implicit sign-up.
+   * Receives the npub and the hex public key.
+   */
+  generateEmail?: (npub: string, pubkey: string) => string | Promise<string>;
   fields?: {
     name?: string;
     publicKey?: string;
@@ -20,9 +25,16 @@ export interface NostrOptions {
   };
 }
 
-export interface Nostr {}
+export interface Nostr {
+  id: string;
+  publicKey: string;
+  userId: string;
+  name?: string | undefined;
+  createdAt: Date;
+}
 
 export type NostrPubkey = {
+  id?: string;
   name?: string | undefined;
   publicKey: string;
   userId: string;

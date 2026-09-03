@@ -11,6 +11,7 @@ export default defineConfig({
     "@better-fetch/fetch",
     "@better-auth/core",
     "better-auth",
+    "zod",
   ],
   treeshake: true,
 });
