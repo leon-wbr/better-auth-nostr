@@ -1,7 +1,7 @@
 {
   "name": "better-auth-nostr",
   "description": "Nostr plugin for Better Auth",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "main": "dist/index.mjs",
   "module": "dist/index.mjs",
