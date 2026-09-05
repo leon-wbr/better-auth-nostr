@@ -1,3 +1,8 @@
+import {
+  createBunkerSigner,
+  createNostrConnectSession,
+  type RemoteNostrSigner,
+} from "better-auth-nostr/client";
 import { generateSecretKey, nip19 } from "nostr-tools";
 import { useState } from "react";
 import {
@@ -147,23 +152,29 @@ function NsecField({
   );
 }
 
+type AuthMethod = "nip07" | "nsec" | "bunker" | "connect";
+
+const METHODS: { value: AuthMethod; label: string }[] = [
+  { value: "nip07", label: "NIP-07" },
+  { value: "nsec", label: "Nsec" },
+  { value: "bunker", label: "Bunker" },
+  { value: "connect", label: "Nostr Connect" },
+];
+
 function MethodToggle({
   value,
   onChange,
 }: {
-  value: "nip07" | "nsec";
-  onChange: (next: "nip07" | "nsec") => void;
+  value: AuthMethod;
+  onChange: (next: AuthMethod) => void;
 }) {
   return (
-    <div className="flex gap-2">
-      {[
-        { value: "nip07", label: "NIP-07" },
-        { value: "nsec", label: "Nsec" },
-      ].map((option) => (
+    <div className="flex flex-wrap gap-2">
+      {METHODS.map((option) => (
         <button
           key={option.value}
           type="button"
-          onClick={() => onChange(option.value as "nip07" | "nsec")}
+          onClick={() => onChange(option.value)}
           className={`px-3 py-1 text-[10px] font-semibold tracking-widest border rounded uppercase ${
             value === option.value
               ? "bg-zinc-800 border-zinc-600 text-white"
@@ -177,25 +188,116 @@ function MethodToggle({
   );
 }
 
+function BunkerField({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <label htmlFor={id} className="text-xs text-zinc-300">
+        Bunker URI
+      </label>
+      <input
+        id={id}
+        type="text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="bunker://… or you@example.com"
+        className="px-2 py-1 border dark:bg-zinc-800 dark:border-zinc-700 text-zinc-100 text-xs"
+      />
+      <p className="text-[10px] text-zinc-500">
+        Paste the connection string from nsec.app, Amber, or nsecbunker. Your
+        key never leaves the signer.
+      </p>
+    </div>
+  );
+}
+
+// The nostrconnect:// URI is minted synchronously, so it can be shown (as a QR
+// code in a real app) while we wait for the remote signer to reach back.
+function ConnectUri({ uri }: { uri: string | null }) {
+  if (!uri) {
+    return (
+      <p className="text-[10px] text-zinc-500">
+        Starts a nostrconnect:// session and waits for a remote signer to
+        approve it.
+      </p>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="text-[10px] text-zinc-500">
+        Scan or paste this into your signer, then approve:
+      </p>
+      <code className="text-[10px] text-emerald-400 break-all border dark:border-zinc-700 p-2">
+        {uri}
+      </code>
+    </div>
+  );
+}
+
+const openAuthUrl = (url: string) =>
+  window.open(url, "_blank", "noopener,noreferrer");
+
 export default function Home() {
   const { data: session } = authClient.useSession();
   const { linked } = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
 
-  const [authMethod, setAuthMethod] = useState<"nip07" | "nsec">("nip07");
+  const [authMethod, setAuthMethod] = useState<AuthMethod>("nip07");
   const [nsec, setNsec] = useState("");
+  const [bunkerUri, setBunkerUri] = useState("");
+  const [connectUri, setConnectUri] = useState<string | null>(null);
   const [signInStatus, setSignInStatus] = useState<{
     ok: boolean;
     message: string;
   } | null>(null);
 
-  const [linkMethod, setLinkMethod] = useState<"nip07" | "nsec">("nsec");
+  const [linkMethod, setLinkMethod] = useState<AuthMethod>("nsec");
   const [linkNsec, setLinkNsec] = useState("");
+  const [linkBunkerUri, setLinkBunkerUri] = useState("");
+  const [linkConnectUri, setLinkConnectUri] = useState<string | null>(null);
   const [linkName, setLinkName] = useState("");
   const [linkStatus, setLinkStatus] = useState<{
     ok: boolean;
     message: string;
   } | null>(null);
+
+  const clientMetadata = {
+    name: "better-auth-nostr example",
+    url: typeof window !== "undefined" ? window.location.origin : undefined,
+  };
+
+  // A remote signer is a live relay subscription, so the caller owns its
+  // lifetime: connect, sign in, close.
+  const openRemoteSigner = async (
+    method: AuthMethod,
+    uri: string,
+    showUri: (next: string | null) => void,
+  ): Promise<RemoteNostrSigner> => {
+    if (method === "bunker") {
+      return await createBunkerSigner(uri, {
+        onAuthUrl: openAuthUrl,
+        metadata: clientMetadata,
+      });
+    }
+
+    const session = createNostrConnectSession({
+      ...clientMetadata,
+      onAuthUrl: openAuthUrl,
+    });
+    showUri(session.uri);
+    try {
+      return await session.connect(120_000);
+    } finally {
+      showUri(null);
+    }
+  };
 
   const handleLogin = async () => {
     setSignInStatus(null);
@@ -204,18 +306,42 @@ export default function Home() {
       setSignInStatus({ ok: false, message: "Enter an nsec first." });
       return;
     }
-
-    const { data, error } = await authClient.signIn.nostr(
-      authMethod === "nsec" ? { nsec } : undefined,
-    );
-
-    if (error) {
-      setSignInStatus({ ok: false, message: formatError(error) });
+    if (authMethod === "bunker" && bunkerUri.trim() === "") {
+      setSignInStatus({ ok: false, message: "Enter a bunker URI first." });
       return;
     }
 
-    setSignInStatus({ ok: true, message: `Signed in as ${data?.user.name}` });
-    revalidator.revalidate();
+    const isRemote = authMethod === "bunker" || authMethod === "connect";
+    let signer: RemoteNostrSigner | null = null;
+
+    try {
+      if (isRemote) {
+        setSignInStatus({
+          ok: true,
+          message: "Waiting for the remote signer…",
+        });
+        signer = await openRemoteSigner(authMethod, bunkerUri, setConnectUri);
+      }
+
+      const { data, error } = await authClient.signIn.nostr(
+        authMethod === "nsec" ? { nsec } : signer ? { signer } : undefined,
+      );
+
+      if (error) {
+        setSignInStatus({ ok: false, message: formatError(error) });
+        return;
+      }
+
+      setSignInStatus({ ok: true, message: `Signed in as ${data?.user.name}` });
+      revalidator.revalidate();
+    } catch (err) {
+      setSignInStatus({
+        ok: false,
+        message: err instanceof Error ? err.message : "Remote signer failed",
+      });
+    } finally {
+      await signer?.close().catch(() => {});
+    }
   };
 
   const handleAddPubkey = async () => {
@@ -225,19 +351,45 @@ export default function Home() {
       setLinkStatus({ ok: false, message: "Enter an nsec first." });
       return;
     }
-
-    const { data, error } = await authClient.nostr.addPubkey({
-      ...(linkMethod === "nsec" ? { nsec: linkNsec } : {}),
-      ...(linkName.trim() ? { name: linkName.trim() } : {}),
-    });
-
-    if (error) {
-      setLinkStatus({ ok: false, message: formatError(error) });
+    if (linkMethod === "bunker" && linkBunkerUri.trim() === "") {
+      setLinkStatus({ ok: false, message: "Enter a bunker URI first." });
       return;
     }
 
-    setLinkStatus({ ok: true, message: `Linked ${data?.pubkey.publicKey}` });
-    revalidator.revalidate();
+    const isRemote = linkMethod === "bunker" || linkMethod === "connect";
+    let signer: RemoteNostrSigner | null = null;
+
+    try {
+      if (isRemote) {
+        setLinkStatus({ ok: true, message: "Waiting for the remote signer…" });
+        signer = await openRemoteSigner(
+          linkMethod,
+          linkBunkerUri,
+          setLinkConnectUri,
+        );
+      }
+
+      const { data, error } = await authClient.nostr.addPubkey({
+        ...(linkMethod === "nsec" ? { nsec: linkNsec } : {}),
+        ...(signer ? { signer } : {}),
+        ...(linkName.trim() ? { name: linkName.trim() } : {}),
+      });
+
+      if (error) {
+        setLinkStatus({ ok: false, message: formatError(error) });
+        return;
+      }
+
+      setLinkStatus({ ok: true, message: `Linked ${data?.pubkey.publicKey}` });
+      revalidator.revalidate();
+    } catch (err) {
+      setLinkStatus({
+        ok: false,
+        message: err instanceof Error ? err.message : "Remote signer failed",
+      });
+    } finally {
+      await signer?.close().catch(() => {});
+    }
   };
 
   const signOut = async () => {
@@ -288,6 +440,14 @@ export default function Home() {
                 onChange={setLinkNsec}
               />
             )}
+            {linkMethod === "bunker" && (
+              <BunkerField
+                id="link-bunker"
+                value={linkBunkerUri}
+                onChange={setLinkBunkerUri}
+              />
+            )}
+            {linkMethod === "connect" && <ConnectUri uri={linkConnectUri} />}
             <div className="flex flex-col gap-2">
               <label htmlFor="link-name" className="text-xs text-zinc-300">
                 Label (optional)
@@ -318,12 +478,20 @@ export default function Home() {
           {authMethod === "nsec" && (
             <NsecField id="nostr-nsec" value={nsec} onChange={setNsec} />
           )}
+          {authMethod === "bunker" && (
+            <BunkerField
+              id="nostr-bunker"
+              value={bunkerUri}
+              onChange={setBunkerUri}
+            />
+          )}
+          {authMethod === "connect" && <ConnectUri uri={connectUri} />}
           <Button
             type="button"
             onClick={handleLogin}
             className="bg-blue-600 text-white hover:bg-blue-700"
           >
-            Login with {authMethod === "nsec" ? "NSEC" : "NIP-07"}
+            Login with {METHODS.find((m) => m.value === authMethod)?.label}
           </Button>
           <Status status={signInStatus} />
         </form>

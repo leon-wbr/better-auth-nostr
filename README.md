@@ -49,10 +49,50 @@ await authClient.signIn.nostr({ nsec });
 await authClient.nostr.addPubkey({ nsec, name: "Backup key" });
 ```
 
-`signIn.nostr` will create and sign the NIP-98 event using:
+`signIn.nostr` will create and sign the NIP-98 event using, in order of precedence:
 
+- a `signer` you pass in — anything with `getPublicKey()` and `signEvent()`, including a NIP-46 remote signer (see below),
 - a passed-in `nsec` string (bech32 or 64-char hex), or
 - a browser extension that exposes `window.nostr.signEvent` (NIP-07).
+
+### Remote signers (NIP-46)
+
+Most people keep their key in a remote signer — Amber, nsec.app, nsecbunker — rather than pasting an nsec into a web app. Both halves of NIP-46 are supported, and both produce a signer you hand to `signIn.nostr` or `nostr.addPubkey`.
+
+The user pastes a `bunker://` URI (or a NIP-05 identifier whose provider advertises NIP-46):
+
+```ts
+import { createBunkerSigner } from "better-auth-nostr/client";
+
+const signer = await createBunkerSigner(uri, {
+  onAuthUrl: (url) => window.open(url, "_blank"),
+  metadata: { name: "My App", url: window.location.origin },
+});
+
+try {
+  await authClient.signIn.nostr({ signer });
+} finally {
+  await signer.close();
+}
+```
+
+Or the app mints a `nostrconnect://` URI for the user to scan. The URI is generated synchronously so you can render the QR code immediately; nothing touches the network until `connect()` is awaited:
+
+```ts
+import { createNostrConnectSession } from "better-auth-nostr/client";
+
+const session = createNostrConnectSession({ name: "My App", relays: ["wss://relay.nsec.app"] });
+showQrCode(session.uri);
+
+const signer = await session.connect(120_000); // resolves once the signer approves
+await authClient.signIn.nostr({ signer });
+```
+
+A remote signer is a live relay subscription, so its lifetime is yours to manage: call `close()` when you are done. To resume a session later without a second approval prompt, persist `signer.clientSecretKey` (and, for the bunker flow, the URI) and pass it back as `clientSecretKey`.
+
+By default a `nostrconnect://` session requests only `sign_event:27235` — enough to authenticate, and nothing else. Widen it with `perms` if your app also signs notes.
+
+One caveat is worth knowing about: NIP-98 stamps `created_at` before the event is signed, and the server rejects anything more than 60 seconds old. A remote signer that waits on a human tapping "approve" on a phone can blow through that. The client detects it and fails with an explicit "the signer took too long" message instead of an opaque `401`.
 
 The action sends the resulting token in the `Authorization` header to `/nostr/login`. The endpoint then:
 
@@ -87,6 +127,10 @@ Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerific
 | `generateEmail`         | Customize the email used when implicitly creating a user. Receives the npub and the hex pubkey. |
 
 The plugin exports its schema so the underlying adapter sets up indexes and the foreign key to `user` automatically.
+
+### Client exports
+
+`better-auth-nostr/client` also exports the signer primitives directly, so you can build the flow yourself: `createPrivateKeySigner`, `createExtensionSigner`, `createBunkerSigner`, `createNostrConnectSession`, `resolveSigner`, `parseSecretKey`, and the `NostrSigner` / `RemoteNostrSigner` types. `NostrSigner` is structurally compatible with `Signer` from `nostr-tools/signer`, so an existing signer implementation can be passed straight through.
 
 ## Development
 
