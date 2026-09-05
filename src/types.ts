@@ -1,5 +1,3 @@
-import type { EventTemplate, Event as NostrEvent } from "nostr-tools";
-
 export interface NostrOptions {
   disableSignUp?: boolean;
   /** @todo Implement requestSignup */
@@ -42,21 +40,3 @@ export type NostrPubkey = {
   userId: string;
   createdAt: Date;
 };
-
-/**
- * Anything that can hand out a public key and sign an event: a local secret
- * key, a NIP-07 extension, or a NIP-46 remote signer. Structurally compatible
- * with `Signer` from `nostr-tools/signer`.
- */
-export interface NostrSigner {
-  getPublicKey(): Promise<string>;
-  signEvent(event: EventTemplate): Promise<NostrEvent>;
-}
-
-/** A signer backed by a live NIP-46 connection to a remote signer. */
-export interface RemoteNostrSigner extends NostrSigner {
-  /** Persist this to resume the session without a new approval prompt. */
-  clientSecretKey: Uint8Array;
-  /** Closes the relay subscription. */
-  close(): Promise<void>;
-}

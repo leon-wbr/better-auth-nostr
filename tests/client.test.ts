@@ -1,4 +1,5 @@
 import {
+  type EventTemplate,
   finalizeEvent,
   generateSecretKey,
   getPublicKey,
@@ -175,7 +176,7 @@ describe("remote signer sign-in", () => {
     { clockSkewSeconds = 0 }: { clockSkewSeconds?: number } = {},
   ) => ({
     getPublicKey: async () => keypair.publicKey,
-    signEvent: async (event: any) => {
+    signEvent: async (event: EventTemplate) => {
       await new Promise((resolve) => setTimeout(resolve, 0));
       return finalizeEvent(
         { ...event, created_at: event.created_at - clockSkewSeconds },

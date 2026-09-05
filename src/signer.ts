@@ -1,7 +1,6 @@
 import {
   getPublicKey as derivePublicKey,
   type EventTemplate,
-  finalizeEvent,
   generateSecretKey,
   type Event as NostrEvent,
   nip19,
@@ -10,23 +9,90 @@ import type { AbstractSimplePool } from "nostr-tools/abstract-pool";
 import {
   type BunkerPointer,
   BunkerSigner,
+  type ClientMetadata,
   createNostrConnectURI,
   parseBunkerInput,
+  toBunkerURL,
 } from "nostr-tools/nip46";
+import { SimplePool } from "nostr-tools/pool";
+import { PlainKeySigner, type Signer } from "nostr-tools/signer";
 import { bytesToHex, hexToBytes } from "nostr-tools/utils";
-import type { NostrSigner, RemoteNostrSigner } from "./types";
 
-/** NIP-98 servers accept an event whose `created_at` is within 60s of now. */
+/**
+ * Anything that can hand out a public key and sign an event: a local secret
+ * key, a NIP-07 extension, or a NIP-46 remote signer. Deliberately wider than
+ * `Signer` from `nostr-tools/signer` (which returns `VerifiedEvent`) so that
+ * arbitrary caller-supplied signers fit; the assertion below keeps the two
+ * compatible in the direction that matters.
+ */
+export interface NostrSigner {
+  getPublicKey(): Promise<string>;
+  signEvent(event: EventTemplate): Promise<NostrEvent>;
+}
+
+/** Fails to compile if upstream's `Signer` stops satisfying `NostrSigner`. */
+const _signerCompat: NostrSigner = null as unknown as Signer;
+void _signerCompat;
+
+/** A signer backed by a live NIP-46 connection to a remote signer. */
+export interface RemoteNostrSigner extends NostrSigner {
+  /** Persist alongside `bunkerUri` to resume without a new approval prompt. */
+  clientSecretKey: Uint8Array;
+  /**
+   * The connection as a `bunker://` URI, resolved after the handshake. Persist
+   * it with `clientSecretKey` and hand both back to `createBunkerSigner` to
+   * resume — this is the only way to resume a `nostrconnect://` session, whose
+   * remote pubkey and relays are not known until the signer answers.
+   */
+  readonly bunkerUri: string;
+  /** Closes the relay subscription, and the pool if we opened it. */
+  close(): Promise<void>;
+}
+
+/**
+ * `nostr-tools` validates a NIP-98 event's `created_at` against this window.
+ * It is the *server's* constant, mirrored here so a doomed token can be
+ * reported before it is sent — not a value defined by NIP-98 itself.
+ */
 export const NIP98_MAX_CLOCK_DRIFT_SECONDS = 60;
+
+/** Reject a little before the server does, leaving room for network transit. */
+const CLIENT_FRESHNESS_MARGIN_SECONDS = 5;
 
 const DEFAULT_NOSTR_CONNECT_RELAYS = ["wss://relay.nsec.app"];
 
 /** Enough to mint NIP-98 tokens; apps needing more can widen it. */
 const DEFAULT_PERMS = ["sign_event:27235"];
 
+/** How long to wait on a remote signer before giving up. */
+export const DEFAULT_SIGNER_TIMEOUT_MS = 300_000;
+
 type WindowNostr = {
   getPublicKey: () => Promise<string> | string;
   signEvent: (event: EventTemplate) => Promise<NostrEvent> | NostrEvent;
+};
+
+/**
+ * NIP-46 requests park a promise until the signer answers over a relay, and
+ * `nostr-tools` never times them out. Without this, an offline bunker or an
+ * ignored approval prompt hangs the caller forever with no error at all.
+ */
+export const withTimeout = async <T>(
+  work: Promise<T>,
+  ms: number,
+  message: string,
+): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 };
 
 export const parseSecretKey = (input: string): Uint8Array => {
@@ -35,11 +101,15 @@ export const parseSecretKey = (input: string): Uint8Array => {
 
   const lower = trimmed.toLowerCase();
   if (nip19.NostrTypeGuard.isNSec(lower)) {
-    const decoded = nip19.decode(lower);
-    if (decoded.type !== "nsec") {
+    // The type guard only checks the shape, so a bad checksum still reaches
+    // decode() and would surface as a raw bech32 error.
+    try {
+      const decoded = nip19.decode(lower);
+      if (decoded.type !== "nsec") throw new Error();
+      return decoded.data;
+    } catch {
       throw new Error("Invalid NSEC private key");
     }
-    return decoded.data;
   }
 
   if (/^[a-f0-9]{64}$/i.test(trimmed)) {
@@ -50,13 +120,8 @@ export const parseSecretKey = (input: string): Uint8Array => {
 };
 
 /** Signs locally with a raw secret key held in the browser. */
-export const createPrivateKeySigner = (nsec: string): NostrSigner => {
-  const secretKey = parseSecretKey(nsec);
-  return {
-    getPublicKey: async () => derivePublicKey(secretKey),
-    signEvent: async (event) => finalizeEvent(event, secretKey),
-  };
-};
+export const createPrivateKeySigner = (nsec: string): NostrSigner =>
+  new PlainKeySigner(parseSecretKey(nsec));
 
 const getExtension = (): WindowNostr | null => {
   if (typeof window === "undefined") return null;
@@ -79,6 +144,8 @@ export type SignerSource = {
   signer?: NostrSigner;
   /** Bech32 nsec or 64-char hex secret. */
   nsec?: string;
+  /** How long to wait for a signature before failing. */
+  timeoutMs?: number;
 };
 
 /**
@@ -95,29 +162,65 @@ export const resolveSigner = (source?: SignerSource): NostrSigner => {
   );
 };
 
-export type BunkerSignerOptions = {
+type RemoteTransportOptions = {
   /**
-   * Client-side key used to talk to the remote signer. Persist
-   * `signer.clientSecretKey` and pass it back to resume a session without a
-   * fresh approval prompt.
+   * Client-side key used to talk to the remote signer. Persist it with
+   * `signer.bunkerUri` to resume a session without a fresh approval prompt.
    */
   clientSecretKey?: Uint8Array;
   /** Called with a URL the user must open to approve the connection. */
   onAuthUrl?: (url: string) => void;
-  /** Metadata shown to the user by the remote signer. */
-  metadata?: { name?: string; url?: string; image?: string };
+  /** NIP-46 permissions to request. Defaults to signing NIP-98 events only. */
+  perms?: string[];
+  /** Shown to the user by the remote signer while approving. */
+  metadata?: ClientMetadata;
+  /**
+   * Relay pool to use. When omitted we open one and close it in `close()`;
+   * when supplied, its lifetime stays yours.
+   */
   pool?: AbstractSimplePool;
+};
+
+export type BunkerSignerOptions = RemoteTransportOptions & {
+  /** How long to wait for the connection to be approved. */
+  timeoutMs?: number;
 };
 
 const wrapBunker = (
   signer: BunkerSigner,
   clientSecretKey: Uint8Array,
+  ownedPool?: SimplePool,
 ): RemoteNostrSigner => ({
   clientSecretKey,
+  // A getter, because switchRelays() can rewrite `bp` after the handshake.
+  get bunkerUri() {
+    return toBunkerURL(signer.bp);
+  },
   getPublicKey: () => signer.getPublicKey(),
   signEvent: (event) => signer.signEvent(event),
-  close: () => signer.close(),
+  close: async () => {
+    await signer.close();
+    ownedPool?.destroy();
+  },
 });
+
+/**
+ * `BunkerSigner.connect()` hardcodes an empty string in NIP-46's permission
+ * slot, so requested permissions never reach the signer and it re-prompts on
+ * every signature. Sending the request ourselves is state-equivalent —
+ * `connect()` touches nothing else.
+ */
+const connectWithPerms = (
+  signer: BunkerSigner,
+  pointer: BunkerPointer,
+  options: RemoteTransportOptions,
+) =>
+  signer.sendRequest("connect", [
+    pointer.pubkey,
+    pointer.secret ?? "",
+    (options.perms ?? DEFAULT_PERMS).join(","),
+    JSON.stringify(options.metadata ?? {}),
+  ]);
 
 /**
  * Connects to a NIP-46 remote signer the user already has, addressed by a
@@ -145,30 +248,30 @@ export const createBunkerSigner = async (
   }
 
   const clientSecretKey = options.clientSecretKey ?? generateSecretKey();
+  const ownedPool = options.pool ? undefined : new SimplePool();
   const signer = BunkerSigner.fromBunker(clientSecretKey, pointer, {
-    pool: options.pool,
+    pool: options.pool ?? ownedPool,
     onauth: options.onAuthUrl,
   });
 
   try {
-    await signer.connect(options.metadata);
+    await withTimeout(
+      connectWithPerms(signer, pointer, options),
+      options.timeoutMs ?? DEFAULT_SIGNER_TIMEOUT_MS,
+      "The remote signer did not approve the connection in time",
+    );
   } catch (error) {
     await signer.close().catch(() => {});
+    ownedPool?.destroy();
     throw error;
   }
 
-  return wrapBunker(signer, clientSecretKey);
+  return wrapBunker(signer, clientSecretKey, ownedPool);
 };
 
-export type NostrConnectOptions = Omit<BunkerSignerOptions, "metadata"> & {
+export type NostrConnectOptions = RemoteTransportOptions & {
   /** Relays the remote signer should answer on. */
   relays?: string[];
-  /** NIP-46 permissions to request. Defaults to signing NIP-98 events only. */
-  perms?: string[];
-  /** Shown to the user by the remote signer while approving. */
-  name?: string;
-  url?: string;
-  image?: string;
   /** Connection secret. Generated when omitted. */
   secret?: string;
 };
@@ -176,9 +279,12 @@ export type NostrConnectOptions = Omit<BunkerSignerOptions, "metadata"> & {
 export type NostrConnectSession = {
   /** Show this to the user as a QR code or a copyable link. */
   uri: string;
-  /** Persist this to resume the session later. */
+  /** Persist this with the resulting signer's `bunkerUri` to resume later. */
   clientSecretKey: Uint8Array;
-  /** Resolves once the remote signer has approved the connection. */
+  /**
+   * Resolves once the remote signer has approved the connection, and rejects
+   * when the deadline passes. Call it once per session.
+   */
   connect: (
     timeoutMsOrSignal?: number | AbortSignal,
   ) => Promise<RemoteNostrSigner>;
@@ -202,29 +308,51 @@ export const createNostrConnectSession = (
   }
 
   const clientSecretKey = options.clientSecretKey ?? generateSecretKey();
-  const secret = options.secret ?? bytesToHex(generateSecretKey()).slice(0, 32);
+  const secret =
+    options.secret ?? bytesToHex(crypto.getRandomValues(new Uint8Array(16)));
 
   const uri = createNostrConnectURI({
     clientPubkey: derivePublicKey(clientSecretKey),
     relays,
     secret,
     perms: options.perms ?? DEFAULT_PERMS,
-    name: options.name,
-    url: options.url,
-    image: options.image,
+    ...options.metadata,
   });
+
+  let started = false;
 
   return {
     uri,
     clientSecretKey,
-    connect: async (timeoutMsOrSignal) => {
-      const signer = await BunkerSigner.fromURI(
-        clientSecretKey,
-        uri,
-        { pool: options.pool, onauth: options.onAuthUrl },
-        timeoutMsOrSignal,
-      );
-      return wrapBunker(signer, clientSecretKey);
+    connect: async (timeoutMsOrSignal = DEFAULT_SIGNER_TIMEOUT_MS) => {
+      if (started) {
+        throw new Error(
+          "This nostrconnect:// session is already connecting — create a new one",
+        );
+      }
+      started = true;
+
+      // A number reaches nostr-tools as `maxWait`, which only drives the EOSE
+      // and connection timeouts and never rejects. `abort` is the only path
+      // wired to sub.close() → onclose → reject, so convert to a signal.
+      const signal =
+        typeof timeoutMsOrSignal === "number"
+          ? AbortSignal.timeout(timeoutMsOrSignal)
+          : timeoutMsOrSignal;
+
+      const ownedPool = options.pool ? undefined : new SimplePool();
+      try {
+        const signer = await BunkerSigner.fromURI(
+          clientSecretKey,
+          uri,
+          { pool: options.pool ?? ownedPool, onauth: options.onAuthUrl },
+          signal,
+        );
+        return wrapBunker(signer, clientSecretKey, ownedPool);
+      } catch (error) {
+        ownedPool?.destroy();
+        throw error;
+      }
     },
   };
 };
@@ -236,11 +364,13 @@ export const createNostrConnectSession = (
  * what actually happened.
  */
 export const assertFreshlySigned = (event: NostrEvent): NostrEvent => {
-  const ageSeconds = Math.abs(Math.round(Date.now() / 1000) - event.created_at);
-  if (ageSeconds >= NIP98_MAX_CLOCK_DRIFT_SECONDS) {
-    throw new Error(
-      `The signer took too long to approve the request (signed event is ${ageSeconds}s old, the server accepts ${NIP98_MAX_CLOCK_DRIFT_SECONDS}s). Try again.`,
-    );
-  }
-  return event;
+  const driftSeconds = Math.round(Date.now() / 1000) - event.created_at;
+  const limit = NIP98_MAX_CLOCK_DRIFT_SECONDS - CLIENT_FRESHNESS_MARGIN_SECONDS;
+  if (Math.abs(driftSeconds) < limit) return event;
+
+  throw new Error(
+    driftSeconds > 0
+      ? `The signer took too long to approve the request (signed event is ${driftSeconds}s old, the server accepts ${NIP98_MAX_CLOCK_DRIFT_SECONDS}s). Try again.`
+      : `The signer's clock is ${Math.abs(driftSeconds)}s ahead of this device, so the server will reject its signature. Check the clock on your signing device.`,
+  );
 };

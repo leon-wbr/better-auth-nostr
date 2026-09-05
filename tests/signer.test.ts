@@ -8,11 +8,14 @@ import { verifyEvent } from "nostr-tools/pure";
 import { bytesToHex } from "nostr-tools/utils";
 import { describe, expect, it } from "vitest";
 import {
+  assertFreshlySigned,
   createBunkerSigner,
   createNostrConnectSession,
   createPrivateKeySigner,
+  NIP98_MAX_CLOCK_DRIFT_SECONDS,
   resolveSigner,
 } from "../src/signer";
+import { makeKeypair } from "./helpers";
 
 const template = {
   kind: 1,
@@ -80,7 +83,7 @@ describe("createBunkerSigner input validation", () => {
   });
 
   it("rejects a bunker URI without a relay, before opening a connection", async () => {
-    const pubkey = getPublicKey(generateSecretKey());
+    const pubkey = makeKeypair().publicKey;
     await expect(createBunkerSigner(`bunker://${pubkey}`)).rejects.toThrow(
       /relay/i,
     );
@@ -92,7 +95,7 @@ describe("createNostrConnectSession", () => {
     const session = createNostrConnectSession({
       relays: ["wss://relay.example.com"],
       perms: ["sign_event:27235"],
-      name: "Test App",
+      metadata: { name: "Test App" },
     });
 
     const url = new URL(session.uri);
@@ -132,5 +135,107 @@ describe("createNostrConnectSession", () => {
 
   it("rejects an empty relay list rather than emitting an unusable URI", () => {
     expect(() => createNostrConnectSession({ relays: [] })).toThrow(/relay/i);
+  });
+});
+
+/**
+ * Stands in for a relay pool. `subscribe` hands back a closer and never
+ * delivers a response, which is what an offline bunker looks like from here.
+ * The abort wiring mirrors abstract-relay's: aborting closes the subscription,
+ * which fires `onclose`.
+ */
+const stubPool = (onSubscribe?: (params: any) => void) => {
+  const pool: any = {
+    destroyed: false,
+    subscribe: (_relays: string[], _filter: unknown, params: any) => {
+      onSubscribe?.(params);
+      params?.abort?.addEventListener?.("abort", () =>
+        params.onclose?.("aborted"),
+      );
+      return { close: () => {} };
+    },
+    publish: () => [Promise.resolve("ok")],
+    destroy: () => {
+      pool.destroyed = true;
+    },
+  };
+  return pool;
+};
+
+const bunkerUriFor = (pubkey: string) =>
+  `bunker://${pubkey}?relay=wss://relay.example.com`;
+
+describe("remote signer timeouts", () => {
+  it("gives up on a bunker that never answers instead of hanging", async () => {
+    const pool = stubPool();
+    const pubkey = makeKeypair().publicKey;
+
+    await expect(
+      createBunkerSigner(bunkerUriFor(pubkey), { pool, timeoutMs: 50 }),
+    ).rejects.toThrow(/in time/i);
+  });
+
+  it("leaves a caller-supplied pool open after a failed connect", async () => {
+    const pool = stubPool();
+    const pubkey = makeKeypair().publicKey;
+
+    await createBunkerSigner(bunkerUriFor(pubkey), {
+      pool,
+      timeoutMs: 50,
+    }).catch(() => {});
+
+    expect(pool.destroyed).toBe(false);
+  });
+
+  it("converts a numeric connect() deadline into an AbortSignal", async () => {
+    // A number reaches nostr-tools as `maxWait`, which never rejects; only
+    // `abort` is wired to a close-and-reject path.
+    let seen: any;
+    const pool = stubPool((params) => {
+      seen = params;
+    });
+    const session = createNostrConnectSession({
+      relays: ["wss://relay.example.com"],
+      pool,
+    });
+
+    await expect(session.connect(50)).rejects.toThrow();
+    expect(seen.abort).toBeInstanceOf(AbortSignal);
+    expect(seen.maxWait).toBeUndefined();
+  });
+
+  it("rejects a second connect() on the same session", async () => {
+    const session = createNostrConnectSession({
+      relays: ["wss://relay.example.com"],
+      pool: stubPool(),
+    });
+
+    await session.connect(50).catch(() => {});
+    await expect(session.connect(50)).rejects.toThrow(/already connecting/i);
+  });
+});
+
+describe("assertFreshlySigned", () => {
+  const at = (offsetSeconds: number) =>
+    ({
+      created_at: Math.round(Date.now() / 1000) - offsetSeconds,
+    }) as any;
+
+  it("accepts an event signed just now", () => {
+    expect(assertFreshlySigned(at(0))).toBeDefined();
+  });
+
+  it("accepts an event comfortably inside the window", () => {
+    expect(assertFreshlySigned(at(30))).toBeDefined();
+  });
+
+  it("rejects before the server's limit, leaving room for transit", () => {
+    expect(() =>
+      assertFreshlySigned(at(NIP98_MAX_CLOCK_DRIFT_SECONDS - 1)),
+    ).toThrow(/too long/i);
+  });
+
+  it("names the clock, not the approval, when the signer runs ahead", () => {
+    expect(() => assertFreshlySigned(at(-120))).toThrow(/clock/i);
   });
 });

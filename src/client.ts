@@ -8,14 +8,15 @@ import { getToken } from "nostr-tools/nip98";
 import type { nostr } from ".";
 import {
   assertFreshlySigned,
+  DEFAULT_SIGNER_TIMEOUT_MS,
+  type NostrSigner,
   resolveSigner,
   type SignerSource,
+  withTimeout,
 } from "./signer";
-import type { Nostr, NostrSigner } from "./types";
+import type { Nostr } from "./types";
 
-type SignInOptions = SignerSource;
-
-type AddPubkeyOptions = SignInOptions & {
+type AddPubkeyOptions = SignerSource & {
   /** Optional display label stored alongside the pubkey row. */
   name?: string;
 };
@@ -61,26 +62,53 @@ export const getNostrActions = (
   const mintToken = async (
     url: string,
     signer: NostrSigner,
+    publicKey: string,
     payload: Record<string, unknown>,
+    timeoutMs: number,
   ): Promise<string> =>
     getToken(
       url,
       "post",
-      async (event) => assertFreshlySigned(await signer.signEvent(event)),
+      async (event) => {
+        const signed = await withTimeout(
+          signer.signEvent(event),
+          timeoutMs,
+          "The signer did not respond in time",
+        );
+        // A signer that switched accounts mid-flow would otherwise fail later
+        // as "invalid or expired nonce", pointing at the wrong problem.
+        if (signed.pubkey !== publicKey) {
+          throw new Error(
+            "The signer signed with a different key than it reported — sign in again",
+          );
+        }
+        return assertFreshlySigned(signed);
+      },
       true,
       payload,
     );
 
+  /** Fetch a nonce for the signer's key and mint a NIP-98 token against it. */
+  const authorize = async (path: string, source?: SignerSource) => {
+    const signer = resolveSigner(source);
+    const publicKey = await signer.getPublicKey();
+    const nonce = await fetchNonce(publicKey);
+    const token = await mintToken(
+      getEndpointUrl(options, path),
+      signer,
+      publicKey,
+      { nonce },
+      source?.timeoutMs ?? DEFAULT_SIGNER_TIMEOUT_MS,
+    );
+    return { nonce, token };
+  };
+
   const signInNostr = async (
-    signInOptions?: SignInOptions,
+    signInOptions?: SignerSource,
     fetchOptions?: BetterFetchOption,
   ) => {
     try {
-      const signer = resolveSigner(signInOptions);
-      const publicKey = await signer.getPublicKey();
-      const nonce = await fetchNonce(publicKey);
-      const url = getEndpointUrl(options, "/nostr/login");
-      const token = await mintToken(url, signer, { nonce });
+      const { nonce, token } = await authorize("/nostr/login", signInOptions);
 
       const response = await $fetch<{
         session: { id: string; userId: string; expiresAt: Date };
@@ -115,11 +143,7 @@ export const getNostrActions = (
     fetchOptions?: BetterFetchOption,
   ) => {
     try {
-      const signer = resolveSigner(addOptions);
-      const publicKey = await signer.getPublicKey();
-      const nonce = await fetchNonce(publicKey);
-      const url = getEndpointUrl(options, "/nostr/add-pubkey");
-      const token = await mintToken(url, signer, { nonce });
+      const { nonce, token } = await authorize("/nostr/add-pubkey", addOptions);
 
       return await $fetch<{ pubkey: Nostr }>("/nostr/add-pubkey", {
         method: "POST",
@@ -165,6 +189,8 @@ export type {
   BunkerSignerOptions,
   NostrConnectOptions,
   NostrConnectSession,
+  NostrSigner,
+  RemoteNostrSigner,
   SignerSource,
 } from "./signer";
 export {
@@ -173,6 +199,5 @@ export {
   createNostrConnectSession,
   createPrivateKeySigner,
   parseSecretKey,
-  resolveSigner,
 } from "./signer";
 export type * from "./types";
