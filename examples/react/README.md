@@ -1,6 +1,6 @@
 # better-auth-nostr — React Router example
 
-A minimal React Router v7 app wired to `better-auth-nostr` through a real SQLite database. It exists to exercise the plugin by hand: sign in with an nsec or a NIP-07 extension, link additional pubkeys to the account, and watch what the server does with them.
+A minimal React Router v7 app wired to `better-auth-nostr` through a real SQLite database. It exists to exercise the plugin by hand: sign in with an nsec, a NIP-07 extension, or a NIP-46 remote signer, link additional pubkeys to the account, and watch what the server does with them.
 
 The plugin is linked with `file:../../`, so npm symlinks the repo root into `node_modules`. Run `npm run build` at the repo root after changing anything under `src/` — the example imports `dist`, not `src`.
 
@@ -35,6 +35,14 @@ The UI generates throwaway keys for you — the **Generate** button next to any 
 For the paths that are tedious to drive by hand — nonce replay, a token signed for another URL, a spoofed `Host` header, add-pubkey without a session — `npm run smoke` runs them all against a server you already started with `npm run dev` and prints a pass/fail line for each. It reads the same `BETTER_AUTH_URL` and `AUTH_BASE_PATH` variables as the app.
 
 **Sign-in and implicit signup.** Generate an nsec, sign in, and confirm a user appears with an `npub1…@nostr.local` email. Sign out, sign back in with the same key, and confirm you land on the same user rather than a second one.
+
+**Remote signers (NIP-46).** Two flows, both under the same method toggle, and both available for sign-in and for linking a key.
+
+*Bunker.* Open [nsec.app](https://nsec.app), create or unlock a key, and copy the `bunker://` connection string it offers. Paste it into the **Bunker** field and log in — the approval prompt appears in the nsec.app tab. A NIP-05 identifier whose provider advertises NIP-46 works in the same field.
+
+*Nostr Connect.* Pick **Nostr Connect** and hit login: the app mints a `nostrconnect://` URI and prints it. Paste it into Amber (or scan it, in a real app that renders a QR code) and approve. The example waits up to two minutes, then fails with a timeout rather than hanging.
+
+Both paths require a working relay, so they are the one part of this example that does not run offline. If the signer sits on the approval prompt for more than a minute you will get a "the signer took too long" error rather than a `401` — that is the NIP-98 60-second window, not a bug.
 
 **Linking a second pubkey.** While signed in, generate a second nsec under *Link another pubkey*, give it a label, and link it. It should appear in the linked list. Sign out, then sign in with that second key — you should land on the *same* account, with both keys still listed. Linking a key the account already owns is a no-op; linking one owned by a different account returns `409`.
 
