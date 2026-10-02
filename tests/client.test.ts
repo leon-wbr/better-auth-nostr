@@ -1,4 +1,10 @@
-import { generateSecretKey, getPublicKey, nip19 } from "nostr-tools";
+import {
+  type EventTemplate,
+  finalizeEvent,
+  generateSecretKey,
+  getPublicKey,
+  nip19,
+} from "nostr-tools";
 import { unpackEventFromToken } from "nostr-tools/nip98";
 import { bytesToHex } from "nostr-tools/utils";
 import { describe, expect, it } from "vitest";
@@ -160,5 +166,77 @@ describe("client sign-in", () => {
     expect(result.error).toBeNull();
     expect(result.data?.pubkey.publicKey).toBe(secondary.publicKey);
     expect(result.data?.pubkey.name).toBe("Backup key");
+  });
+});
+
+describe("remote signer sign-in", () => {
+  /** Stands in for a NIP-46 bunker: async, and never exposes a secret key. */
+  const remoteSigner = (
+    keypair: { secretKey: Uint8Array; publicKey: string },
+    { clockSkewSeconds = 0 }: { clockSkewSeconds?: number } = {},
+  ) => ({
+    getPublicKey: async () => keypair.publicKey,
+    signEvent: async (event: EventTemplate) => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      return finalizeEvent(
+        { ...event, created_at: event.created_at - clockSkewSeconds },
+        keypair.secretKey,
+      );
+    },
+  });
+
+  it("completes a full sign-in through an injected signer", async () => {
+    const auth = createTestAuth();
+    const keypair = makeKeypair();
+    const { $store, notified } = createTestStore();
+
+    const actions = getNostrActions(createTestFetch(auth), { $store }, {
+      baseURL: TEST_ORIGIN,
+    } as any);
+
+    const result = await actions.signIn.nostr({
+      signer: remoteSigner(keypair),
+    });
+
+    expect(result.error).toBeNull();
+    expect(result.data?.user.name).toBe(nip19.npubEncode(keypair.publicKey));
+    expect(notified).toContain("$sessionSignal");
+  });
+
+  it("links an additional pubkey through an injected signer", async () => {
+    const auth = createTestAuth();
+    const primary = makeKeypair();
+    const secondary = makeKeypair();
+    const { $store } = createTestStore();
+
+    const actions = getNostrActions(createTestFetch(auth), { $store }, {
+      baseURL: TEST_ORIGIN,
+    } as any);
+
+    await actions.signIn.nostr({ nsec: nip19.nsecEncode(primary.secretKey) });
+    const result = await actions.nostr.addPubkey({
+      signer: remoteSigner(secondary),
+      name: "Bunker key",
+    });
+
+    expect(result.error).toBeNull();
+    expect(result.data?.pubkey.publicKey).toBe(secondary.publicKey);
+  });
+
+  it("reports a slow approval as a timeout rather than an opaque 401", async () => {
+    const auth = createTestAuth();
+    const keypair = makeKeypair();
+    const { $store } = createTestStore();
+
+    const actions = getNostrActions(createTestFetch(auth), { $store }, {
+      baseURL: TEST_ORIGIN,
+    } as any);
+
+    const result = await actions.signIn.nostr({
+      signer: remoteSigner(keypair, { clockSkewSeconds: 120 }),
+    });
+
+    expect(result.data).toBeNull();
+    expect(result.error?.message).toMatch(/too long|expired/i);
   });
 });

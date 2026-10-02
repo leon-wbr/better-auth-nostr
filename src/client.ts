@@ -4,31 +4,21 @@ import type {
   ClientStore,
 } from "@better-auth/core";
 import type { BetterFetch, BetterFetchOption } from "@better-fetch/fetch";
-import {
-  getPublicKey as derivePublicKey,
-  type EventTemplate,
-  finalizeEvent,
-  type Event as NostrEvent,
-  nip19,
-} from "nostr-tools";
 import { getToken } from "nostr-tools/nip98";
-import { hexToBytes } from "nostr-tools/utils";
 import type { nostr } from ".";
+import {
+  assertFreshlySigned,
+  DEFAULT_SIGNER_TIMEOUT_MS,
+  type NostrSigner,
+  resolveSigner,
+  type SignerSource,
+  withTimeout,
+} from "./signer";
 import type { Nostr } from "./types";
 
-type SignInOptions = {
-  /** Bech32 nsec or 64-char hex secret. Omit to use a NIP-07 extension. */
-  nsec?: string;
-};
-
-type AddPubkeyOptions = SignInOptions & {
+type AddPubkeyOptions = SignerSource & {
   /** Optional display label stored alongside the pubkey row. */
   name?: string;
-};
-
-type WindowNostr = {
-  getPublicKey: () => Promise<string> | string;
-  signEvent: (event: EventTemplate) => Promise<NostrEvent> | NostrEvent;
 };
 
 /**
@@ -53,39 +43,6 @@ const getEndpointUrl = (
   return `${trimmed}${basePath}${path}`;
 };
 
-const getExtension = (): WindowNostr | null => {
-  if (typeof window === "undefined") return null;
-  const ext = (window as unknown as { nostr?: WindowNostr }).nostr;
-  return ext && typeof ext.signEvent === "function" ? ext : null;
-};
-
-export const parseSecretKey = (input: string): Uint8Array => {
-  const trimmed = input.trim();
-  if (!trimmed) throw new Error("Missing NSEC private key");
-
-  const lower = trimmed.toLowerCase();
-  if (nip19.NostrTypeGuard.isNSec(lower)) {
-    const decoded = nip19.decode(lower);
-    if (decoded.type !== "nsec") {
-      throw new Error("Invalid NSEC private key");
-    }
-    return decoded.data;
-  }
-
-  if (/^[a-f0-9]{64}$/i.test(trimmed)) {
-    return hexToBytes(trimmed.toLowerCase());
-  }
-
-  throw new Error("Invalid NSEC private key");
-};
-
-const resolvePublicKey = async (nsec?: string): Promise<string> => {
-  if (nsec) return derivePublicKey(parseSecretKey(nsec));
-  const ext = getExtension();
-  if (!ext) throw new Error("No NIP-07 extension and no NSEC provided");
-  return await ext.getPublicKey();
-};
-
 export const getNostrActions = (
   $fetch: BetterFetch,
   { $store }: { $store: ClientStore },
@@ -104,39 +61,54 @@ export const getNostrActions = (
 
   const mintToken = async (
     url: string,
-    nsec: string | undefined,
+    signer: NostrSigner,
+    publicKey: string,
     payload: Record<string, unknown>,
-  ): Promise<string> => {
-    if (nsec) {
-      const secretKey = parseSecretKey(nsec);
-      return getToken(
-        url,
-        "post",
-        (event) => finalizeEvent(event, secretKey),
-        true,
-        payload,
-      );
-    }
-    const ext = getExtension();
-    if (!ext) throw new Error("Nostr NIP-07 extension not found");
-    return getToken(
+    timeoutMs: number,
+  ): Promise<string> =>
+    getToken(
       url,
       "post",
-      (event) => Promise.resolve(ext.signEvent(event)),
+      async (event) => {
+        const signed = await withTimeout(
+          signer.signEvent(event),
+          timeoutMs,
+          "The signer did not respond in time",
+        );
+        // A signer that switched accounts mid-flow would otherwise fail later
+        // as "invalid or expired nonce", pointing at the wrong problem.
+        if (signed.pubkey !== publicKey) {
+          throw new Error(
+            "The signer signed with a different key than it reported — sign in again",
+          );
+        }
+        return assertFreshlySigned(signed);
+      },
       true,
       payload,
     );
+
+  /** Fetch a nonce for the signer's key and mint a NIP-98 token against it. */
+  const authorize = async (path: string, source?: SignerSource) => {
+    const signer = resolveSigner(source);
+    const publicKey = await signer.getPublicKey();
+    const nonce = await fetchNonce(publicKey);
+    const token = await mintToken(
+      getEndpointUrl(options, path),
+      signer,
+      publicKey,
+      { nonce },
+      source?.timeoutMs ?? DEFAULT_SIGNER_TIMEOUT_MS,
+    );
+    return { nonce, token };
   };
 
   const signInNostr = async (
-    signInOptions?: SignInOptions,
+    signInOptions?: SignerSource,
     fetchOptions?: BetterFetchOption,
   ) => {
     try {
-      const publicKey = await resolvePublicKey(signInOptions?.nsec);
-      const nonce = await fetchNonce(publicKey);
-      const url = getEndpointUrl(options, "/nostr/login");
-      const token = await mintToken(url, signInOptions?.nsec, { nonce });
+      const { nonce, token } = await authorize("/nostr/login", signInOptions);
 
       const response = await $fetch<{
         session: { id: string; userId: string; expiresAt: Date };
@@ -171,10 +143,7 @@ export const getNostrActions = (
     fetchOptions?: BetterFetchOption,
   ) => {
     try {
-      const publicKey = await resolvePublicKey(addOptions?.nsec);
-      const nonce = await fetchNonce(publicKey);
-      const url = getEndpointUrl(options, "/nostr/add-pubkey");
-      const token = await mintToken(url, addOptions?.nsec, { nonce });
+      const { nonce, token } = await authorize("/nostr/add-pubkey", addOptions);
 
       return await $fetch<{ pubkey: Nostr }>("/nostr/add-pubkey", {
         method: "POST",
@@ -216,4 +185,19 @@ export const nostrClient = () => {
   } satisfies BetterAuthClientPlugin;
 };
 
+export type {
+  BunkerSignerOptions,
+  NostrConnectOptions,
+  NostrConnectSession,
+  NostrSigner,
+  RemoteNostrSigner,
+  SignerSource,
+} from "./signer";
+export {
+  createBunkerSigner,
+  createExtensionSigner,
+  createNostrConnectSession,
+  createPrivateKeySigner,
+  parseSecretKey,
+} from "./signer";
 export type * from "./types";
