@@ -132,6 +132,19 @@ const { data: event, error } = await authClient.nostr.signEvent(
 
 It takes the same `signer` / `nsec` / NIP-07 precedence and `timeoutMs` as `signIn.nostr`, makes no server request, and returns `{ data, error }` like the other actions instead of throwing. The returned event is checked before you see it: its signature must verify and its pubkey must match the one the signer reported. A remote signer only signs kinds it was granted, so widen `perms` (for example `sign_event:1`) when you create it.
 
+### Profile metadata
+
+`fetchProfile` resolves an `npub`, `nprofile`, hex pubkey or NIP-05 identifier and returns the user's kind `0` metadata, for showing a name and avatar or prefilling a signup form:
+
+```ts
+import { fetchProfile } from "better-auth-nostr/client";
+
+const profile = await fetchProfile("alice@example.com");
+profile?.metadata.display_name;
+```
+
+Relay hints from an `nprofile` or the NIP-05 record are queried first, then `relays` (default: a few public relays). When relays disagree the newest event with a valid signature and a JSON-object body wins. It resolves to `null` when the identity does not resolve or no relay has a profile, and throws on input it cannot interpret. Pass your own `pool` to control the connection lifetime; otherwise one is opened and closed for the call. Metadata is user-supplied and unverified: treat `picture` and `website` as untrusted URLs, and note that `nip05` is only a claim until checked against the pubkey.
+
 ## Requirements
 
 Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerificationValue`, which was introduced in 1.7.0.

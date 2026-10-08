@@ -248,6 +248,12 @@ export const nostrClient = () => {
 };
 
 export type {
+  FetchProfileOptions,
+  NostrProfile,
+  NostrProfileMetadata,
+} from "./profile";
+export { DEFAULT_PROFILE_RELAYS, fetchProfile } from "./profile";
+export type {
   BunkerSignerOptions,
   NostrConnectOptions,
   NostrConnectSession,
