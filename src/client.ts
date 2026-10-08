@@ -4,6 +4,8 @@ import type {
   ClientStore,
 } from "@better-auth/core";
 import type { BetterFetch, BetterFetchOption } from "@better-fetch/fetch";
+import type { EventTemplate, Event as NostrEvent } from "nostr-tools";
+import { verifyEvent } from "nostr-tools";
 import { getToken } from "nostr-tools/nip98";
 import type { nostr } from ".";
 import {
@@ -164,9 +166,54 @@ export const getNostrActions = (
     }
   };
 
+  const signEvent = async (
+    template: EventTemplate,
+    source?: SignerSource,
+  ): Promise<
+    | { data: NostrEvent; error: null }
+    | {
+        data: null;
+        error: {
+          code: string;
+          message: string;
+          status: number;
+          statusText: string;
+        };
+      }
+  > => {
+    try {
+      const signer = resolveSigner(source);
+      const publicKey = await signer.getPublicKey();
+      const signed = await withTimeout(
+        signer.signEvent(template),
+        source?.timeoutMs ?? DEFAULT_SIGNER_TIMEOUT_MS,
+        "The signer did not respond in time",
+      );
+      if (signed.pubkey !== publicKey) {
+        throw new Error(
+          "The signer signed with a different key than it reported",
+        );
+      }
+      if (!verifyEvent(signed)) {
+        throw new Error("The signer returned an invalid event");
+      }
+      return { data: signed, error: null };
+    } catch (err) {
+      return {
+        data: null,
+        error: {
+          code: "NOSTR_SIGN_EVENT_FAILED",
+          message: err instanceof Error ? err.message : "Failed to sign event",
+          status: 400,
+          statusText: "BAD_REQUEST",
+        },
+      };
+    }
+  };
+
   return {
     signIn: { nostr: signInNostr },
-    nostr: { addPubkey },
+    nostr: { addPubkey, signEvent },
     $Infer: {} as { Nostr: Nostr },
   };
 };
