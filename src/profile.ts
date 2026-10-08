@@ -42,7 +42,28 @@ export const DEFAULT_PROFILE_RELAYS = [
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 
+const KNOWN_STRING_FIELDS = [
+  "name",
+  "display_name",
+  "about",
+  "picture",
+  "banner",
+  "website",
+  "nip05",
+  "lud16",
+] as const;
+
 const unique = (values: string[]) => [...new Set(values)];
+
+const isRelayUrl = (value: unknown): value is string => {
+  if (typeof value !== "string") return false;
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "wss:" || protocol === "ws:";
+  } catch {
+    return false;
+  }
+};
 
 const resolvePointer = async (
   input: string,
@@ -83,9 +104,16 @@ const resolvePointer = async (
 const parseMetadata = (content: string): NostrProfileMetadata | null => {
   try {
     const parsed: unknown = JSON.parse(content);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as NostrProfileMetadata)
-      : null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    const metadata = { ...parsed } as NostrProfileMetadata;
+    for (const field of KNOWN_STRING_FIELDS) {
+      if (field in metadata && typeof metadata[field] !== "string") {
+        delete metadata[field];
+      }
+    }
+    return metadata;
   } catch {
     return null;
   }
@@ -103,10 +131,12 @@ export const fetchProfile = async (
   const pointer = await resolvePointer(input);
   if (!pointer) return null;
 
+  const hints = pointer.relays.filter(isRelayUrl);
   const relays = unique([
-    ...pointer.relays,
-    ...(options.relays ?? DEFAULT_PROFILE_RELAYS),
+    ...hints,
+    ...(options.relays ?? DEFAULT_PROFILE_RELAYS).filter(isRelayUrl),
   ]);
+  if (relays.length === 0) return null;
   const ownedPool = options.pool ? undefined : new SimplePool();
   const pool = options.pool ?? (ownedPool as SimplePool);
 
@@ -126,7 +156,7 @@ export const fetchProfile = async (
       if (metadata && verifyEvent(event)) {
         return {
           pubkey: pointer.pubkey,
-          relays: pointer.relays,
+          relays: hints,
           metadata,
           event,
         };

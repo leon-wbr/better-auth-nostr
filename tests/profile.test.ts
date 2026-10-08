@@ -139,4 +139,53 @@ describe("fetchProfile", () => {
       fetchProfile(nip19.nsecEncode(kp.secretKey), { pool: fakePool([]) }),
     ).rejects.toThrow();
   });
+
+  it("discards malformed relay hints and still queries the valid relays", async () => {
+    const kp = makeKeypair();
+    const pool = fakePool([metadataEvent(kp, '{"name":"ok"}')]);
+    const nprofile = nip19.nprofileEncode({
+      pubkey: kp.publicKey,
+      relays: ["wss://[", "http://not-a-relay.example", "wss://hint.example"],
+    });
+
+    const profile = await fetchProfile(nprofile, {
+      pool,
+      relays: ["not a url", "wss://own.example"],
+    });
+
+    expect(pool.calls[0].relays).toEqual([
+      "wss://hint.example",
+      "wss://own.example",
+    ]);
+    expect(profile?.relays).toEqual(["wss://hint.example"]);
+  });
+
+  it("does not hang on a malformed hint when no usable relay remains", async () => {
+    const kp = makeKeypair();
+    const nprofile = nip19.nprofileEncode({
+      pubkey: kp.publicKey,
+      relays: ["wss://["],
+    });
+
+    const result = await Promise.race([
+      fetchProfile(nprofile, { relays: [], timeoutMs: 50 }),
+      new Promise((resolve) => setTimeout(() => resolve("hung"), 1_000)),
+    ]);
+
+    expect(result).toBeNull();
+  });
+
+  it("omits known metadata fields that are not strings, keeping unknown ones", async () => {
+    const kp = makeKeypair();
+    const profile = await fetchProfile(kp.publicKey, {
+      pool: fakePool([
+        metadataEvent(
+          kp,
+          '{"name":42,"picture":{},"about":"hi","custom":{"a":1}}',
+        ),
+      ]),
+    });
+
+    expect(profile?.metadata).toEqual({ about: "hi", custom: { a: 1 } });
+  });
 });
