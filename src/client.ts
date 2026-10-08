@@ -183,20 +183,35 @@ export const getNostrActions = (
   > => {
     try {
       const signer = resolveSigner(source);
-      const publicKey = await signer.getPublicKey();
       const signed = await withTimeout(
-        signer.signEvent(template),
+        (async () => {
+          const publicKey = await signer.getPublicKey();
+          return { publicKey, event: await signer.signEvent(template) };
+        })(),
         source?.timeoutMs ?? DEFAULT_SIGNER_TIMEOUT_MS,
         "The signer did not respond in time",
-      );
-      if (signed.pubkey !== publicKey) {
-        throw new Error(
-          "The signer signed with a different key than it reported",
-        );
-      }
-      if (!verifyEvent(signed)) {
-        throw new Error("The signer returned an invalid event");
-      }
+      ).then(({ publicKey, event }) => {
+        if (event.pubkey !== publicKey) {
+          throw new Error(
+            "The signer signed with a different key than it reported",
+          );
+        }
+        // Rebuilt from protocol fields so nostr-tools' cached verification
+        // flag on the signer's object cannot vouch for mutated content.
+        const fresh: NostrEvent = {
+          id: event.id,
+          pubkey: event.pubkey,
+          created_at: event.created_at,
+          kind: event.kind,
+          tags: event.tags,
+          content: event.content,
+          sig: event.sig,
+        };
+        if (!verifyEvent(fresh)) {
+          throw new Error("The signer returned an invalid event");
+        }
+        return fresh;
+      });
       return { data: signed, error: null };
     } catch (err) {
       return {

@@ -350,4 +350,36 @@ describe("client signEvent", () => {
     expect(result.data).toBeNull();
     expect(result.error?.message).toMatch(/invalid/i);
   });
+
+  it("times out a signer whose getPublicKey never answers", async () => {
+    const signer = {
+      getPublicKey: () => new Promise<never>(() => {}),
+      signEvent: async (event: EventTemplate) =>
+        finalizeEvent(event, makeKeypair().secretKey),
+    };
+    const result = await actionsFor().nostr.signEvent(note(), {
+      signer,
+      timeoutMs: 20,
+    });
+
+    expect(result.data).toBeNull();
+    expect(result.error?.code).toBe("NOSTR_SIGN_EVENT_FAILED");
+    expect(result.error?.message).toMatch(/did not respond/);
+  });
+
+  it("rejects a finalized event mutated after signing, without serialization", async () => {
+    const keypair = makeKeypair();
+    const signer = {
+      getPublicKey: async () => keypair.publicKey,
+      signEvent: async (event: EventTemplate) => {
+        const signed = finalizeEvent(event, keypair.secretKey);
+        signed.content = "tampered";
+        return signed;
+      },
+    };
+    const result = await actionsFor().nostr.signEvent(note(), { signer });
+
+    expect(result.data).toBeNull();
+    expect(result.error?.message).toMatch(/invalid/i);
+  });
 });
