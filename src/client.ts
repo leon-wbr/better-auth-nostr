@@ -4,6 +4,8 @@ import type {
   ClientStore,
 } from "@better-auth/core";
 import type { BetterFetch, BetterFetchOption } from "@better-fetch/fetch";
+import type { EventTemplate, Event as NostrEvent } from "nostr-tools";
+import { verifyEvent } from "nostr-tools";
 import { getToken } from "nostr-tools/nip98";
 import type { nostr } from ".";
 import {
@@ -164,9 +166,69 @@ export const getNostrActions = (
     }
   };
 
+  const signEvent = async (
+    template: EventTemplate,
+    source?: SignerSource,
+  ): Promise<
+    | { data: NostrEvent; error: null }
+    | {
+        data: null;
+        error: {
+          code: string;
+          message: string;
+          status: number;
+          statusText: string;
+        };
+      }
+  > => {
+    try {
+      const signer = resolveSigner(source);
+      const signed = await withTimeout(
+        (async () => {
+          const publicKey = await signer.getPublicKey();
+          return { publicKey, event: await signer.signEvent(template) };
+        })(),
+        source?.timeoutMs ?? DEFAULT_SIGNER_TIMEOUT_MS,
+        "The signer did not respond in time",
+      ).then(({ publicKey, event }) => {
+        if (event.pubkey !== publicKey) {
+          throw new Error(
+            "The signer signed with a different key than it reported",
+          );
+        }
+        // Rebuilt from protocol fields so nostr-tools' cached verification
+        // flag on the signer's object cannot vouch for mutated content.
+        const fresh: NostrEvent = {
+          id: event.id,
+          pubkey: event.pubkey,
+          created_at: event.created_at,
+          kind: event.kind,
+          tags: event.tags,
+          content: event.content,
+          sig: event.sig,
+        };
+        if (!verifyEvent(fresh)) {
+          throw new Error("The signer returned an invalid event");
+        }
+        return fresh;
+      });
+      return { data: signed, error: null };
+    } catch (err) {
+      return {
+        data: null,
+        error: {
+          code: "NOSTR_SIGN_EVENT_FAILED",
+          message: err instanceof Error ? err.message : "Failed to sign event",
+          status: 400,
+          statusText: "BAD_REQUEST",
+        },
+      };
+    }
+  };
+
   return {
     signIn: { nostr: signInNostr },
-    nostr: { addPubkey },
+    nostr: { addPubkey, signEvent },
     $Infer: {} as { Nostr: Nostr },
   };
 };
