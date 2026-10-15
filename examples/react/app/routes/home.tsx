@@ -107,7 +107,7 @@ function Status({
     <p
       className={`text-[11px] font-mono break-all ${
         status.ok ? "text-emerald-400" : "text-red-400"
-      }`}
+      } whitespace-pre-wrap`}
     >
       {status.message}
     </p>
@@ -255,7 +255,7 @@ type Status = { ok: boolean; message: string } | null;
  * Owns one panel's choice of signer. Sign-in and key-linking each get their
  * own instance, so a new auth method is wired here once rather than twice.
  */
-function useSignerInput(defaultMethod: AuthMethod) {
+function useSignerInput(defaultMethod: AuthMethod, perms?: string[]) {
   const [method, setMethod] = useState<AuthMethod>(defaultMethod);
   const [nsec, setNsec] = useState("");
   const [bunkerUri, setBunkerUri] = useState("");
@@ -283,6 +283,7 @@ function useSignerInput(defaultMethod: AuthMethod) {
       const signer = await createBunkerSigner(bunkerUri, {
         onAuthUrl: openAuthUrl,
         metadata: CLIENT_METADATA,
+        perms,
         timeoutMs: 120_000,
       });
       return [{ signer }, signer];
@@ -290,6 +291,7 @@ function useSignerInput(defaultMethod: AuthMethod) {
 
     const session = createNostrConnectSession({
       metadata: CLIENT_METADATA,
+      perms,
       onAuthUrl: openAuthUrl,
     });
     setConnectUri(session.uri);
@@ -364,7 +366,9 @@ export default function Home() {
 
   const login = useSignerInput("nip07");
   const link = useSignerInput("nsec");
+  const sign = useSignerInput("nsec", ["sign_event:1"]);
   const [linkName, setLinkName] = useState("");
+  const [noteContent, setNoteContent] = useState("gm from better-auth-nostr");
 
   const handleLogin = () =>
     login.submit(
@@ -382,6 +386,22 @@ export default function Home() {
         }),
       (data) => `Linked ${data?.pubkey.publicKey}`,
       () => revalidator.revalidate(),
+    );
+
+  const handleSignNote = () =>
+    sign.submit(
+      (source) =>
+        authClient.nostr.signEvent(
+          {
+            kind: 1,
+            created_at: Math.floor(Date.now() / 1000),
+            tags: [],
+            content: noteContent,
+          },
+          source,
+        ),
+      (event) => JSON.stringify(event, null, 2),
+      () => {},
     );
 
   const signOut = async () => {
@@ -444,6 +464,37 @@ export default function Home() {
               Link pubkey
             </Button>
             <Status status={link.status} />
+          </div>
+
+          <div className="flex flex-col gap-4 border-t dark:border-zinc-800 pt-4">
+            <h2 className="text-xs text-zinc-300">Sign a note</h2>
+            <p className="text-[10px] text-zinc-500">
+              Signs a kind 1 event with <code>authClient.nostr.signEvent</code>{" "}
+              using the same signer choices as sign-in. Nothing is sent to the
+              server or published. A remote signer is asked for{" "}
+              <code>sign_event:1</code>.
+            </p>
+            {sign.fields}
+            <div className="flex flex-col gap-2">
+              <label htmlFor="note-content" className="text-xs text-zinc-300">
+                Note
+              </label>
+              <textarea
+                id="note-content"
+                value={noteContent}
+                onChange={(event) => setNoteContent(event.target.value)}
+                rows={3}
+                className="px-2 py-1 border dark:bg-zinc-800 dark:border-zinc-700 text-zinc-100 text-xs"
+              />
+            </div>
+            <Button
+              type="button"
+              onClick={handleSignNote}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              Sign note
+            </Button>
+            <Status status={sign.status} />
           </div>
         </>
       ) : (
