@@ -46,6 +46,8 @@ Both paths require a working relay, so they are the one part of this example tha
 
 **Linking a second pubkey.** While signed in, generate a second nsec under *Link another pubkey*, give it a label, and link it. It should appear in the linked list. Sign out, then sign in with that second key — you should land on the *same* account, with both keys still listed. Linking a key the account already owns is a no-op; linking one owned by a different account returns `409`.
 
+**Signing an event.** While signed in, the *Sign a note* panel calls `authClient.nostr.signEvent` with a kind 1 template and prints the signed event. It takes the same signer choices as sign-in, makes no server request, and publishes nothing. Check that `pubkey` is the key you picked and that `sig` is present. With a bunker or Nostr Connect signer, the example asks for `sign_event:1` when it creates the signer (via `perms`), because the default permission only covers the NIP-98 login event; approve it in the signer's prompt.
+
 **The multi-tab nonce trap.** Open two tabs, start a sign-in in each with the *same* key, and submit the first one. Nonces are keyed per pubkey and consuming one deletes every row for that key, so the second tab's nonce was already orphaned by the first tab's request — expect both to fail with "Invalid or expired nonce". A plain refresh-then-retry reproduces it too. Worth deciding whether that behaviour is acceptable before release.
 
 **Expired nonces.** Run with `NOSTR_NONCE_TTL_MS=1` and sign in. The request should fail with "Invalid or expired nonce" rather than succeeding.

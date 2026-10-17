@@ -4,6 +4,7 @@ import {
   generateSecretKey,
   getPublicKey,
   nip19,
+  verifyEvent,
 } from "nostr-tools";
 import { unpackEventFromToken } from "nostr-tools/nip98";
 import { bytesToHex } from "nostr-tools/utils";
@@ -238,5 +239,147 @@ describe("remote signer sign-in", () => {
 
     expect(result.data).toBeNull();
     expect(result.error?.message).toMatch(/too long|expired/i);
+  });
+});
+
+describe("client signEvent", () => {
+  const actionsFor = () => {
+    const { $store } = createTestStore();
+    return getNostrActions(createTestFetch(createTestAuth()), { $store }, {
+      baseURL: TEST_ORIGIN,
+    } as any);
+  };
+  const note = (): EventTemplate => ({
+    kind: 1,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [],
+    content: "hello nostr",
+  });
+
+  it("signs an arbitrary event with an nsec", async () => {
+    const keypair = makeKeypair();
+    const result = await actionsFor().nostr.signEvent(note(), {
+      nsec: nip19.nsecEncode(keypair.secretKey),
+    });
+
+    expect(result.error).toBeNull();
+    expect(result.data?.pubkey).toBe(keypair.publicKey);
+    expect(result.data?.content).toBe("hello nostr");
+    expect(verifyEvent(result.data!)).toBe(true);
+  });
+
+  it("signs through a supplied signer", async () => {
+    const keypair = makeKeypair();
+    const signer = {
+      getPublicKey: async () => keypair.publicKey,
+      signEvent: async (event: EventTemplate) =>
+        finalizeEvent(event, keypair.secretKey),
+    };
+    const result = await actionsFor().nostr.signEvent(note(), { signer });
+
+    expect(result.error).toBeNull();
+    expect(result.data?.pubkey).toBe(keypair.publicKey);
+  });
+
+  it("does not touch the server", async () => {
+    const { $store } = createTestStore();
+    let calls = 0;
+    const $fetch = (async () => {
+      calls++;
+      return { data: null, error: null };
+    }) as any;
+    const actions = getNostrActions($fetch, { $store }, {
+      baseURL: TEST_ORIGIN,
+    } as any);
+
+    await actions.nostr.signEvent(note(), {
+      nsec: nip19.nsecEncode(makeKeypair().secretKey),
+    });
+    expect(calls).toBe(0);
+  });
+
+  it("reports an error instead of throwing when no signer is available", async () => {
+    const result = await actionsFor().nostr.signEvent(note());
+
+    expect(result.data).toBeNull();
+    expect(result.error?.code).toBe("NOSTR_SIGN_EVENT_FAILED");
+    expect(result.error?.message).toMatch(/NIP-07|NSEC/);
+  });
+
+  it("times out a signer that never answers", async () => {
+    const signer = {
+      getPublicKey: async () => "00".repeat(32),
+      signEvent: () => new Promise<never>(() => {}),
+    };
+    const result = await actionsFor().nostr.signEvent(note(), {
+      signer,
+      timeoutMs: 20,
+    });
+
+    expect(result.error?.message).toMatch(/did not respond/);
+  });
+
+  it("rejects an event signed by a different key than the signer reported", async () => {
+    const reported = makeKeypair();
+    const actual = makeKeypair();
+    const signer = {
+      getPublicKey: async () => reported.publicKey,
+      signEvent: async (event: EventTemplate) =>
+        finalizeEvent(event, actual.secretKey),
+    };
+    const result = await actionsFor().nostr.signEvent(note(), { signer });
+
+    expect(result.data).toBeNull();
+    expect(result.error?.message).toMatch(/different key/);
+  });
+
+  it("rejects an event whose signature does not verify", async () => {
+    const keypair = makeKeypair();
+    const signer = {
+      getPublicKey: async () => keypair.publicKey,
+      signEvent: async (event: EventTemplate) =>
+        JSON.parse(
+          JSON.stringify({
+            ...finalizeEvent(event, keypair.secretKey),
+            content: "tampered",
+          }),
+        ),
+    };
+    const result = await actionsFor().nostr.signEvent(note(), { signer });
+
+    expect(result.data).toBeNull();
+    expect(result.error?.message).toMatch(/invalid/i);
+  });
+
+  it("times out a signer whose getPublicKey never answers", async () => {
+    const signer = {
+      getPublicKey: () => new Promise<never>(() => {}),
+      signEvent: async (event: EventTemplate) =>
+        finalizeEvent(event, makeKeypair().secretKey),
+    };
+    const result = await actionsFor().nostr.signEvent(note(), {
+      signer,
+      timeoutMs: 20,
+    });
+
+    expect(result.data).toBeNull();
+    expect(result.error?.code).toBe("NOSTR_SIGN_EVENT_FAILED");
+    expect(result.error?.message).toMatch(/did not respond/);
+  });
+
+  it("rejects a finalized event mutated after signing, without serialization", async () => {
+    const keypair = makeKeypair();
+    const signer = {
+      getPublicKey: async () => keypair.publicKey,
+      signEvent: async (event: EventTemplate) => {
+        const signed = finalizeEvent(event, keypair.secretKey);
+        signed.content = "tampered";
+        return signed;
+      },
+    };
+    const result = await actionsFor().nostr.signEvent(note(), { signer });
+
+    expect(result.data).toBeNull();
+    expect(result.error?.message).toMatch(/invalid/i);
   });
 });

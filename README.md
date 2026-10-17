@@ -119,6 +119,19 @@ Because the signed event is bound to the endpoint URL, the client has to sign ag
 
 Set `baseURL` on the server as well. The event is validated against `ctx.context.baseURL`, and when that is neither configured nor supplied through `BETTER_AUTH_URL`, Better Auth derives it from the incoming request — which means a `Host` header an attacker controls decides the URL the signature is checked against. Configuring `baseURL` is what makes that binding meaningful behind a proxy.
 
+### Signing other events
+
+The same signer resolution powers a post-login helper, so an app can publish a note or update a profile without wiring up a second signing path:
+
+```ts
+const { data: event, error } = await authClient.nostr.signEvent(
+  { kind: 1, created_at: Math.floor(Date.now() / 1000), tags: [], content: "gm" },
+  { signer },
+);
+```
+
+It takes the same `signer` / `nsec` / NIP-07 precedence and `timeoutMs` as `signIn.nostr`, makes no server request, and returns `{ data, error }` like the other actions instead of throwing. The returned event is checked before you see it: its signature must verify and its pubkey must match the one the signer reported. A remote signer only signs kinds it was granted, so widen `perms` (for example `sign_event:1`) when you create it.
+
 ## Requirements
 
 Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerificationValue`, which was introduced in 1.7.0.
