@@ -55,15 +55,20 @@ const KNOWN_STRING_FIELDS = [
 
 const unique = (values: string[]) => [...new Set(values)];
 
-const isRelayUrl = (value: unknown): value is string => {
+export const hasUrlProtocol = (
+  value: unknown,
+  protocols: string[],
+): value is string => {
   if (typeof value !== "string") return false;
   try {
-    const { protocol } = new URL(value);
-    return protocol === "wss:" || protocol === "ws:";
+    return protocols.includes(new URL(value).protocol);
   } catch {
     return false;
   }
 };
+
+const isRelayUrl = (value: unknown): value is string =>
+  hasUrlProtocol(value, ["wss:", "ws:"]);
 
 const resolvePointer = async (
   input: string,

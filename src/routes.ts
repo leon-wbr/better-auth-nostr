@@ -9,6 +9,7 @@ import { setSessionCookie } from "better-auth/cookies";
 import { nip19 } from "nostr-tools";
 import { unpackEventFromToken, validateEvent } from "nostr-tools/nip98";
 import * as z from "zod";
+import { fetchProfile, hasUrlProtocol } from "./profile";
 import type { NostrOptions, NostrPubkey } from "./types";
 
 const DEFAULT_NONCE_TTL = 5 * 60 * 1000;
@@ -27,6 +28,31 @@ const resolveModel = (opts?: NostrOptions) => ({
   model: opts?.modelName ?? "nostrPubkey",
   pubkeyField: opts?.fields?.publicKey ?? "publicKey",
 });
+
+const MAX_NAME_LENGTH = 120;
+const MAX_IMAGE_URL_LENGTH = 2048;
+
+const profileAutofill = async (
+  opts: NostrOptions | undefined,
+  pubkey: string,
+): Promise<{ name?: string; image?: string }> => {
+  if (!opts?.profileAutofill) return {};
+  const fetchOptions =
+    opts.profileAutofill === true ? {} : opts.profileAutofill;
+
+  const profile = await fetchProfile(pubkey, fetchOptions).catch(() => null);
+  if (!profile) return {};
+
+  const { display_name, name, picture } = profile.metadata;
+  const label = [display_name, name]
+    .map((value) => value?.trim())
+    .find((value) => value);
+  return {
+    ...(label && { name: label.slice(0, MAX_NAME_LENGTH) }),
+    ...(hasUrlProtocol(picture, ["https:", "http:"]) &&
+      picture.length <= MAX_IMAGE_URL_LENGTH && { image: picture }),
+  };
+};
 
 export const getNostrNonce = (opts?: NostrOptions) =>
   createAuthEndpoint(
@@ -152,10 +178,13 @@ export const loginNostr = (opts?: NostrOptions) =>
           (await opts?.generateEmail?.(npub, event.pubkey)) ??
           `${npub}@nostr.local`;
 
+        const autofill = await profileAutofill(opts, event.pubkey);
+
         user = await ctx.context.internalAdapter.createUser(
           {
             email,
             name: npub,
+            ...autofill,
           },
           { method: "nostr" },
         );

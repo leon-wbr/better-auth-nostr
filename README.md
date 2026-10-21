@@ -162,6 +162,9 @@ Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerific
 | `nonceTtlMs`            | Nonce time-to-live in milliseconds. Defaults to 5 minutes.                                      |
 | `getNonce`              | Custom nonce generator. Must return `Promise<string>`.                                          |
 | `generateEmail`         | Customize the email used when implicitly creating a user. Receives the npub and the hex pubkey. |
+| `profileAutofill`       | Opt in to filling a new user's `name` and `image` from their kind `0` profile on implicit sign-up. `true` uses the default relays; pass `{ relays, timeoutMs }` to tune. A relay failure never blocks sign-up. |
+
+Autofill runs once, at account creation, and never touches the email. Only `display_name`/`name` and an http(s) `picture` are used.
 
 The plugin exports its schema so the underlying adapter sets up indexes and the foreign key to `user` automatically.
 
