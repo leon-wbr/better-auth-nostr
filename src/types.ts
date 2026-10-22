@@ -1,5 +1,14 @@
+import type { FetchProfileOptions } from "./profile";
+
 export interface NostrOptions {
   disableSignUp?: boolean;
+  /**
+   * Fill a new user's name and image from their kind 0 profile metadata on
+   * implicit sign-up. Off by default: it makes the server query relays during
+   * sign-in. A relay failure or timeout never blocks sign-up. Pass `true` for
+   * the default relays, or an object to choose relays and timeout.
+   */
+  profileAutofill?: boolean | FetchProfileOptions;
   /** @todo Implement requestSignup */
   disableImplicitSignUp?: boolean;
   modelName?: string;
