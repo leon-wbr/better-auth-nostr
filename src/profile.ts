@@ -1,169 +1,112 @@
-import { type Event as NostrEvent, nip19, verifyEvent } from "nostr-tools";
+import { kinds, type Event as NostrEvent } from "nostr-tools";
 import type { AbstractSimplePool } from "nostr-tools/abstract-pool";
 import { isNip05, queryProfile } from "nostr-tools/nip05";
+import { decodeNostrURI, type ProfilePointer } from "nostr-tools/nip19";
 import { SimplePool } from "nostr-tools/pool";
+import { isHex32, normalizeURL } from "nostr-tools/utils";
+import * as z from "zod";
 
-/** Fields from NIP-01 and common usage; relays may carry arbitrary others. */
-export type NostrProfileMetadata = {
-  name?: string;
-  display_name?: string;
-  about?: string;
-  picture?: string;
-  banner?: string;
-  website?: string;
-  nip05?: string;
-  lud16?: string;
-  [key: string]: unknown;
-};
+/** NIP-01 kind 0 plus the NIP-24 extra fields. Unknown keys pass through; a known key with the wrong type is dropped. */
+const profileMetadataSchema = z.looseObject({
+  name: z.string().optional().catch(undefined),
+  display_name: z.string().optional().catch(undefined),
+  about: z.string().optional().catch(undefined),
+  picture: z.string().optional().catch(undefined),
+  banner: z.string().optional().catch(undefined),
+  website: z.string().optional().catch(undefined),
+  nip05: z.string().optional().catch(undefined),
+  lud16: z.string().optional().catch(undefined),
+});
 
-export type NostrProfile = {
-  pubkey: string;
-  /** Relay hints from the nprofile or NIP-05 record, if any. */
-  relays: string[];
+export type NostrProfileMetadata = z.infer<typeof profileMetadataSchema>;
+
+export type NostrProfile = Required<ProfilePointer> & {
   metadata: NostrProfileMetadata;
   /** The kind 0 event the metadata came from. */
   event: NostrEvent;
 };
 
 export type FetchProfileOptions = {
-  /** Relays queried after any hints carried by the input. */
-  relays?: string[];
-  /** Relay pool to use; when omitted one is opened and closed for the call. */
-  pool?: Pick<AbstractSimplePool, "querySync">;
-  /** How long to wait on relays. */
+  relays: readonly string[];
   timeoutMs?: number;
+  /**
+   * Also query the relays named by an nprofile or NIP-05 record, and resolve
+   * NIP-05 identifiers at all. Both connect to hosts chosen by the input, so
+   * only the browser turns this on.
+   */
+  followRelayHints?: boolean;
+  /** When omitted a pool is opened and closed for the call. */
+  pool?: AbstractSimplePool;
 };
 
-export const DEFAULT_PROFILE_RELAYS = [
-  "wss://relay.damus.io",
-  "wss://nos.lol",
-  "wss://relay.nsec.app",
-];
+export const DEFAULT_RELAY_TIMEOUT_MS = 5_000;
 
-const DEFAULT_TIMEOUT_MS = 5_000;
-
-const KNOWN_STRING_FIELDS = [
-  "name",
-  "display_name",
-  "about",
-  "picture",
-  "banner",
-  "website",
-  "nip05",
-  "lud16",
-] as const;
-
-const unique = (values: string[]) => [...new Set(values)];
-
-const isRelayUrl = (value: unknown): value is string => {
-  if (typeof value !== "string") return false;
-  try {
-    const { protocol } = new URL(value);
-    return protocol === "wss:" || protocol === "ws:";
-  } catch {
-    return false;
-  }
-};
+const relayUrl = z.url({ protocol: /^wss?$/ });
 
 const resolvePointer = async (
   input: string,
-): Promise<{ pubkey: string; relays: string[] } | null> => {
+  followRelayHints: boolean,
+): Promise<ProfilePointer | null> => {
   const value = input.trim();
-  const lower = value.toLowerCase();
+  if (isHex32(value.toLowerCase())) return { pubkey: value.toLowerCase() };
 
-  if (/^[a-f0-9]{64}$/.test(lower)) return { pubkey: lower, relays: [] };
+  const decoded = decodeNostrURI(value);
+  if (decoded.type === "npub") return { pubkey: decoded.data };
+  if (decoded.type === "nprofile") return decoded.data;
 
-  if (lower.startsWith("npub1") || lower.startsWith("nprofile1")) {
-    let decoded: ReturnType<typeof nip19.decode>;
-    try {
-      decoded = nip19.decode(lower);
-    } catch {
-      throw new Error("Invalid npub or nprofile");
-    }
-    if (decoded.type === "npub") return { pubkey: decoded.data, relays: [] };
-    if (decoded.type === "nprofile") {
-      return {
-        pubkey: decoded.data.pubkey,
-        relays: decoded.data.relays ?? [],
-      };
-    }
-  }
-
-  if (isNip05(value)) {
-    const pointer = await queryProfile(value);
-    return pointer
-      ? { pubkey: pointer.pubkey, relays: pointer.relays ?? [] }
-      : null;
-  }
+  if (followRelayHints && isNip05(value)) return queryProfile(value);
 
   throw new Error(
-    "Unrecognised profile reference — expected an npub, nprofile, hex pubkey or NIP-05 identifier",
+    followRelayHints
+      ? "Expected an npub, nprofile, hex pubkey or NIP-05 identifier"
+      : "Expected an npub, nprofile or hex pubkey",
   );
 };
 
-const parseMetadata = (content: string): NostrProfileMetadata | null => {
-  try {
-    const parsed: unknown = JSON.parse(content);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return null;
-    }
-    const metadata = { ...parsed } as NostrProfileMetadata;
-    for (const field of KNOWN_STRING_FIELDS) {
-      if (field in metadata && typeof metadata[field] !== "string") {
-        delete metadata[field];
-      }
-    }
-    return metadata;
-  } catch {
-    return null;
-  }
-};
-
 /**
- * Resolve an npub, nprofile, hex pubkey or NIP-05 identifier and fetch its
- * kind 0 profile metadata. Resolves to `null` when the identity cannot be
- * resolved or no relay holds a usable profile.
+ * Resolve a profile reference and fetch its newest kind 0 event. Resolves to
+ * `null` when the identity does not resolve or no relay has a usable profile.
  */
 export const fetchProfile = async (
   input: string,
-  options: FetchProfileOptions = {},
+  {
+    relays,
+    timeoutMs = DEFAULT_RELAY_TIMEOUT_MS,
+    followRelayHints = false,
+    pool,
+  }: FetchProfileOptions,
 ): Promise<NostrProfile | null> => {
-  const pointer = await resolvePointer(input);
+  const pointer = await resolvePointer(input, followRelayHints);
   if (!pointer) return null;
 
-  const hints = pointer.relays.filter(isRelayUrl);
-  const relays = unique([
-    ...hints,
-    ...(options.relays ?? DEFAULT_PROFILE_RELAYS).filter(isRelayUrl),
-  ]);
-  if (relays.length === 0) return null;
-  const ownedPool = options.pool ? undefined : new SimplePool();
-  const pool = options.pool ?? (ownedPool as SimplePool);
+  const isRelayUrl = (url: string) => relayUrl.safeParse(url).success;
+  const hints = followRelayHints
+    ? (pointer.relays ?? []).filter(isRelayUrl)
+    : [];
+  const urls = [
+    ...new Set([...hints, ...relays.filter(isRelayUrl)].map(normalizeURL)),
+  ];
+  if (urls.length === 0) return null;
 
+  const ownedPool = pool ? undefined : new SimplePool();
   try {
-    const events = await pool.querySync(
-      relays,
-      { kinds: [0], authors: [pointer.pubkey] },
-      { maxWait: options.timeoutMs ?? DEFAULT_TIMEOUT_MS },
+    const event = await (pool ?? (ownedPool as SimplePool)).get(
+      urls,
+      { kinds: [kinds.Metadata], authors: [pointer.pubkey] },
+      { maxWait: timeoutMs },
     );
-
-    const candidates = events
-      .filter((e) => e.kind === 0 && e.pubkey === pointer.pubkey)
-      .sort((a, b) => b.created_at - a.created_at);
-
-    for (const event of candidates) {
-      const metadata = parseMetadata(event.content);
-      if (metadata && verifyEvent(event)) {
-        return {
-          pubkey: pointer.pubkey,
-          relays: hints,
-          metadata,
-          event,
-        };
-      }
-    }
+    if (!event) return null;
+    const metadata = profileMetadataSchema.safeParse(JSON.parse(event.content));
+    if (!metadata.success) return null;
+    return {
+      pubkey: pointer.pubkey,
+      relays: hints,
+      metadata: metadata.data,
+      event,
+    };
+  } catch {
     return null;
   } finally {
-    ownedPool?.close(relays);
+    ownedPool?.close(urls);
   }
 };

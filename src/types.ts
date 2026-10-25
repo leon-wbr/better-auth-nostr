@@ -1,3 +1,11 @@
+/** How to reach relays; shared by every feature that reads from them. */
+export interface RelayOptions {
+  /** Relays this app reads from. There is no default: this library never picks relays for you. */
+  relays?: [string, ...string[]];
+  /** How long to wait on relays, in milliseconds. Defaults to 5000. */
+  relayTimeoutMs?: number;
+}
+
 export interface NostrOptions {
   disableSignUp?: boolean;
   /** @todo Implement requestSignup */
