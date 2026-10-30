@@ -132,6 +132,34 @@ const { data: event, error } = await authClient.nostr.signEvent(
 
 It takes the same `signer` / `nsec` / NIP-07 precedence and `timeoutMs` as `signIn.nostr`, makes no server request, and returns `{ data, error }` like the other actions instead of throwing. The returned event is checked before you see it: its signature must verify and its pubkey must match the one the signer reported. A remote signer only signs kinds it was granted, so widen `perms` (for example `sign_event:1`) when you create it.
 
+### Profile metadata
+
+Configure relays on the client and `nostr.getProfile` resolves an `npub`, `nprofile`, hex pubkey or NIP-05 identifier and returns the user's kind `0` metadata, for showing a name and avatar or prefilling a signup form:
+
+```ts
+export const authClient = createAuthClient({
+  plugins: [nostrClient({ relays: ["wss://relay.example.com"] })],
+});
+
+const { data: profile, error } = await authClient.nostr.getProfile("alice@example.com");
+profile?.metadata.display_name;
+```
+
+It runs in the browser and makes no server request. Relay hints from an `nprofile` or the NIP-05 record are queried alongside your `relays`, and the newest kind `0` event wins; the pool verifies its signature. `data` is `null` when the identity does not resolve or no relay has a profile, and `error` is set for input it cannot interpret. `relayTimeoutMs` bounds the wait, and `getProfile(input, { timeoutMs })` overrides it per call. `input` is required: the session does not carry the user's pubkey, so pass the one you signed in with.
+
+`metadata` keeps the NIP-01 and NIP-24 string fields (`name`, `display_name`, `about`, `picture`, `banner`, `website`, `nip05`, `lud16`) and passes unknown keys through; a known field with the wrong type is dropped. Metadata is user-supplied and unverified: treat `picture` and `website` as untrusted URLs, and note that `nip05` is only a claim until checked against the pubkey.
+
+### Relays
+
+This plugin ships with no default relays, on purpose. Which relays your app talks to is a product decision (privacy, reliability, censorship resistance, who sees your users' pubkeys and IPs), and a library that picks for you makes that decision silently. Every feature that reads from relays therefore needs `relays` configured; leaving it out is a type error.
+
+| Option           | Description                                                     |
+| ---------------- | --------------------------------------------------------------- |
+| `relays`         | Relays this app reads from. Non-empty; there is no default.     |
+| `relayTimeoutMs` | How long to wait on relays, in milliseconds. Defaults to 5000.  |
+
+Both are top-level options of `nostrClient()`, since they describe how to reach relays rather than what a feature does with the data. The client follows relay hints from `nprofile`s and NIP-05 records, because there they only make the user's own browser connect somewhere.
+
 ## Requirements
 
 Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerificationValue`, which was introduced in 1.7.0.
@@ -154,7 +182,7 @@ The plugin exports its schema so the underlying adapter sets up indexes and the 
 
 ### Client exports
 
-`better-auth-nostr/client` also exports the signer primitives directly, so you can build the flow yourself: `createPrivateKeySigner`, `createExtensionSigner`, `createBunkerSigner`, `createNostrConnectSession`, `parseSecretKey`, and the `NostrSigner` / `RemoteNostrSigner` types. `NostrSigner` is structurally compatible with `Signer` from `nostr-tools/signer` — a compile-time assertion in the source keeps it that way — so an existing signer implementation, including a bare `PlainKeySigner`, can be passed straight through.
+`better-auth-nostr/client` also exports the signer primitives directly, so you can build the flow yourself: `createPrivateKeySigner`, `createExtensionSigner`, `createBunkerSigner`, `createNostrConnectSession`, `parseSecretKey`, the `NostrSigner` / `RemoteNostrSigner` types, and the `NostrProfile`, `NostrProfileMetadata` and `RelayOptions` types. `NostrSigner` is structurally compatible with `Signer` from `nostr-tools/signer` — a compile-time assertion in the source keeps it that way — so an existing signer implementation, including a bare `PlainKeySigner`, can be passed straight through.
 
 ## Development
 
