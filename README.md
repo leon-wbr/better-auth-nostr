@@ -155,10 +155,10 @@ This plugin ships with no default relays, on purpose. Which relays your app talk
 
 | Option           | Description                                                     |
 | ---------------- | --------------------------------------------------------------- |
-| `relays`         | Relays this app reads from. Non-empty; there is no default.     |
+| `relays`                   | Relays the server reads from. No default. When set, a new user is filled from their kind `0` profile at sign-up; when unset, no lookup happens. See [Relays](#relays). |
 | `relayTimeoutMs` | How long to wait on relays, in milliseconds. Defaults to 5000.  |
 
-Both are top-level options of `nostrClient()`, since they describe how to reach relays rather than what a feature does with the data. The client follows relay hints from `nprofile`s and NIP-05 records, because there they only make the user's own browser connect somewhere.
+Both are top-level options of `nostr()` and `nostrClient()`, since they describe how to reach relays rather than what a feature does with the data. The client follows relay hints from `nprofile`s and NIP-05 records, because there they only make the user's own browser connect somewhere.
 
 ## Requirements
 
@@ -168,15 +168,37 @@ Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerific
 
 ## Configuration Options
 
-| Option                  | Description                                                                                     |
-| ----------------------- | ----------------------------------------------------------------------------------------------- |
-| `disableSignUp`         | Reserved for future request-gated signup flows. Currently a no-op.                              |
-| `disableImplicitSignUp` | Reject logins from unseen pubkeys instead of auto-creating a Better Auth user.                  |
-| `modelName`             | Override the `nostrPubkey` model name registered in the schema.                                 |
-| `fields`                | Customize field names for `name`, `publicKey`, `userId`, and `createdAt`.                       |
-| `nonceTtlMs`            | Nonce time-to-live in milliseconds. Defaults to 5 minutes.                                      |
-| `getNonce`              | Custom nonce generator. Must return `Promise<string>`.                                          |
-| `generateEmail`         | Customize the email used when implicitly creating a user. Receives the npub and the hex pubkey. |
+| Option                     | Description                                                                                                                       |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `disableSignUp`            | Reserved for future request-gated signup flows. Currently a no-op.                                                                |
+| `disableImplicitSignUp`    | Reject logins from unseen pubkeys instead of auto-creating a Better Auth user.                                                    |
+| `modelName`                | Override the `nostrPubkey` model name registered in the schema.                                                                   |
+| `fields`                   | Customize field names for `name`, `publicKey`, `userId`, and `createdAt`.                                                         |
+| `nonceTtlMs`               | Nonce time-to-live in milliseconds. Defaults to 5 minutes.                                                                        |
+| `getNonce`                 | Custom nonce generator. Must return `Promise<string>`.                                                                            |
+| `generateEmail`            | Customize the email used when implicitly creating a user. Receives the npub and the hex pubkey.                                   |
+| `relays`                   | Relays the server reads from. No default. When set, a new user is filled from their kind `0` profile at sign-up; when unset, no lookup happens. See [Relays](#relays). |
+| `relayTimeoutMs`           | How long to wait on relays, in milliseconds. Defaults to 5000.                                                                    |
+| `mapProfileToUser`         | Map the profile to user fields, sync or async. The result is spread over the default mapping; extra keys go to additional fields. |
+| `overrideUserInfoOnSignIn` | Also refresh an existing user from their profile on every sign-in, not only at sign-up. Needs `relays`. Defaults to `false`.        |
+
+#### Filling the user from the Nostr profile
+
+The profile options mirror `mapProfileToUser` and `overrideUserInfoOnSignIn` on Better Auth's social providers, so they behave the way you already know:
+
+```ts
+nostr({
+  relays: ["wss://relay.example.com"],
+  mapProfileToUser: ({ metadata }) => ({
+    name: metadata.display_name?.slice(0, 80),
+    lud16: metadata.lud16,
+  }),
+});
+```
+
+The default mapping, the counterpart of GitHub's `name || login` and `avatar_url`, takes `display_name` or else `name` (trimmed) and an `https:` `picture`. Whatever `mapProfileToUser` returns is spread over that, so you only return what you want to change. Extra keys are filtered through `user.additionalFields` the same way a social provider's are; keys that are not declared fields are dropped. Setting `relays` is the opt-in: without it the server never contacts a relay and the name stays the npub. A new user gets the mapped fields at sign-up; an existing user is only updated when `overrideUserInfoOnSignIn` is on, which costs a relay round-trip on every sign-in. Sign-up waits on the relay lookup for up to `relayTimeoutMs` (5 seconds by default), so lower it if sign-up latency matters.
+
+Two things differ from a social provider, both because kind `0` is a self-claimed, best-effort relay lookup rather than part of an OAuth handshake. The lookup is best effort, and one that fails, times out or finds nothing falls back to the npub instead of failing sign-in. And `email`, `emailVerified` and `id` are typed `never` in `NostrMappedUser`: identity is the signing pubkey, and the email stays `generateEmail`'s job. The server queries only your `relays`; it never follows relay hints or resolves NIP-05, since that would let user input pick the hosts it connects to.
 
 The plugin exports its schema so the underlying adapter sets up indexes and the foreign key to `user` automatically.
 

@@ -1,15 +1,17 @@
 import { randomBytes } from "node:crypto";
-import type { User } from "better-auth";
+import type { GenericEndpointContext, User } from "better-auth";
 import {
   APIError,
   createAuthEndpoint,
   sessionMiddleware,
 } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
+import { parseAdditionalUserInputFromProviderProfile } from "better-auth/db";
 import { nip19 } from "nostr-tools";
 import { unpackEventFromToken, validateEvent } from "nostr-tools/nip98";
 import * as z from "zod";
-import type { NostrOptions, NostrPubkey } from "./types";
+import { fetchProfile, type NostrProfile } from "./profile";
+import type { NostrMappedUser, NostrOptions, NostrPubkey } from "./types";
 
 const DEFAULT_NONCE_TTL = 5 * 60 * 1000;
 const PUBKEY_REGEX = /^[a-f0-9]{64}$/i;
@@ -27,6 +29,64 @@ const resolveModel = (opts?: NostrOptions) => ({
   model: opts?.modelName ?? "nostrPubkey",
   pubkeyField: opts?.fields?.publicKey ?? "publicKey",
 });
+
+const httpsUrl = z.url({ protocol: /^https$/ });
+
+const defaultProfileMapping = ({ metadata }: NostrProfile): NostrMappedUser => {
+  const name = [metadata.display_name, metadata.name]
+    .map((value) => value?.trim())
+    .find(Boolean);
+  const image = httpsUrl.safeParse(metadata.picture);
+  return {
+    ...(name && { name }),
+    ...(image.success && { image: image.data }),
+  };
+};
+
+/** Best effort, like the rest of relay access: any failure maps to no fields. */
+const userInfoFromProfile = async (
+  ctx: GenericEndpointContext,
+  opts: NostrOptions | undefined,
+  pubkey: string,
+  action: "create" | "update",
+): Promise<
+  ({ name?: string; image?: string } & Record<string, unknown>) | null
+> => {
+  if (!opts?.relays) return null;
+  try {
+    const profile = await fetchProfile(pubkey, {
+      relays: opts.relays,
+      timeoutMs: opts.relayTimeoutMs,
+    });
+    if (!profile) return null;
+    const {
+      id: _id,
+      email: _email,
+      emailVerified: _emailVerified,
+      name,
+      image,
+      ...extra
+    } = {
+      ...defaultProfileMapping(profile),
+      ...(await opts.mapProfileToUser?.(profile)),
+    };
+    return {
+      name,
+      image,
+      ...parseAdditionalUserInputFromProviderProfile(
+        ctx.context.options,
+        extra,
+        action,
+      ),
+    };
+  } catch (error) {
+    ctx.context.logger.warn(
+      "Could not fill user info from Nostr profile",
+      error,
+    );
+    return null;
+  }
+};
 
 export const getNostrNonce = (opts?: NostrOptions) =>
   createAuthEndpoint(
@@ -152,10 +212,18 @@ export const loginNostr = (opts?: NostrOptions) =>
           (await opts?.generateEmail?.(npub, event.pubkey)) ??
           `${npub}@nostr.local`;
 
+        const userInfo = await userInfoFromProfile(
+          ctx,
+          opts,
+          event.pubkey,
+          "create",
+        );
+
         user = await ctx.context.internalAdapter.createUser(
           {
+            ...userInfo,
+            name: userInfo?.name || npub,
             email,
-            name: npub,
           },
           { method: "nostr" },
         );
@@ -184,6 +252,22 @@ export const loginNostr = (opts?: NostrOptions) =>
         );
         if (!user) {
           throw new APIError("UNAUTHORIZED", { message: "User not found" });
+        }
+
+        if (opts?.overrideUserInfoOnSignIn) {
+          const userInfo = await userInfoFromProfile(
+            ctx,
+            opts,
+            event.pubkey,
+            "update",
+          );
+          if (userInfo) {
+            user =
+              (await ctx.context.internalAdapter.updateUser(
+                user.id,
+                userInfo,
+              )) ?? user;
+          }
         }
       }
 

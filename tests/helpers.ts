@@ -1,6 +1,6 @@
 import type { ClientStore } from "@better-auth/core";
 import type { BetterFetch } from "@better-fetch/fetch";
-import { betterAuth } from "better-auth";
+import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { type MemoryDB, memoryAdapter } from "better-auth/adapters/memory";
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools";
 import { getToken } from "nostr-tools/nip98";
@@ -15,9 +15,13 @@ const createMemoryDb = (modelName: string): MemoryDB => ({
   [modelName]: [],
 });
 
-export const createTestAuth = (options?: NostrOptions) => {
+export const createTestAuth = (
+  options?: NostrOptions,
+  { user }: Pick<BetterAuthOptions, "user"> = {},
+) => {
   const modelName = options?.modelName ?? "nostrPubkey";
   return betterAuth({
+    user,
     baseURL: TEST_ORIGIN,
     secret: "test-secret-do-not-use-in-production",
     database: memoryAdapter(createMemoryDb(modelName)),

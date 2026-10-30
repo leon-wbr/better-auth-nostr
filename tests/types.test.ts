@@ -1,6 +1,8 @@
 import { createAuthClient } from "better-auth/client";
 import { describe, expectTypeOf, it } from "vitest";
 import { nostrClient } from "../src/client";
+import { nostr } from "../src/index";
+import type { NostrMappedUser } from "../src/types";
 
 describe("relay options at the type level", () => {
   it("exposes nostr.getProfile only when relays are configured", () => {
@@ -22,5 +24,23 @@ describe("relay options at the type level", () => {
   it("rejects an empty relay list", () => {
     // @ts-expect-error relays must name at least one relay
     nostrClient({ relays: [] });
+  });
+
+  it("rejects an empty server relay list", () => {
+    nostr({ relays: ["wss://relay.example.com"] });
+    nostr();
+    // @ts-expect-error relays must name at least one relay
+    nostr({ relays: [] });
+  });
+
+  it("keeps identity and email out of mapProfileToUser", () => {
+    expectTypeOf<NostrMappedUser["email"]>().toEqualTypeOf<undefined>();
+    expectTypeOf<NostrMappedUser["emailVerified"]>().toEqualTypeOf<undefined>();
+    expectTypeOf<NostrMappedUser["id"]>().toEqualTypeOf<undefined>();
+    nostr({
+      relays: ["wss://relay.example.com"],
+      // @ts-expect-error email cannot be mapped from a kind 0 profile
+      mapProfileToUser: () => ({ email: "alice@example.com" }),
+    });
   });
 });
