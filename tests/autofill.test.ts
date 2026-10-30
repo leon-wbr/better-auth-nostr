@@ -62,16 +62,13 @@ const login = async (
 };
 
 const signUp = (keypair: Keypair, options: NostrOptions = {}) =>
-  login(
-    createTestAuth({ relays: RELAYS, fetchProfileOnSignIn: true, ...options }),
-    keypair,
-  );
+  login(createTestAuth({ relays: RELAYS, ...options }), keypair);
 
-describe("fetchProfileOnSignIn", () => {
-  it("is off by default and never touches relays", async () => {
+describe("profile fill at sign-up", () => {
+  it("never touches relays when none are configured", async () => {
     const keypair = makeKeypair();
     publishProfile(keypair, { name: "alice" });
-    const user = await login(createTestAuth({ relays: RELAYS }), keypair);
+    const user = await login(createTestAuth(), keypair);
     expect(user.name.startsWith("npub")).toBe(true);
     expect(relay.calls).toHaveLength(0);
   });
@@ -137,7 +134,6 @@ describe("fetchProfileOnSignIn", () => {
     const keypair = makeKeypair();
     const auth = createTestAuth({
       relays: RELAYS,
-      fetchProfileOnSignIn: true,
     });
     publishProfile(keypair, { name: "alice" });
     await login(auth, keypair);
@@ -191,7 +187,6 @@ describe("mapProfileToUser", () => {
     const auth = createTestAuth(
       {
         relays: RELAYS,
-        fetchProfileOnSignIn: true,
         mapProfileToUser: ({ metadata }) => ({
           lud16: metadata.lud16,
           notAField: "dropped",
@@ -225,7 +220,6 @@ describe("overrideUserInfoOnSignIn", () => {
     const keypair = makeKeypair();
     const auth = createTestAuth({
       relays: RELAYS,
-      fetchProfileOnSignIn: true,
       overrideUserInfoOnSignIn: true,
     });
     publishProfile(keypair, { name: "alice" });
@@ -244,7 +238,6 @@ describe("overrideUserInfoOnSignIn", () => {
     const keypair = makeKeypair();
     const auth = createTestAuth({
       relays: RELAYS,
-      fetchProfileOnSignIn: true,
       overrideUserInfoOnSignIn: true,
     });
     publishProfile(keypair, { name: "alice" });

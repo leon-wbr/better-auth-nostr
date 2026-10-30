@@ -52,7 +52,7 @@ const userInfoFromProfile = async (
 ): Promise<
   ({ name?: string; image?: string } & Record<string, unknown>) | null
 > => {
-  if (!opts?.fetchProfileOnSignIn) return null;
+  if (!opts?.relays) return null;
   try {
     const profile = await fetchProfile(pubkey, {
       relays: opts.relays,

@@ -2,7 +2,11 @@ import type { NostrProfile } from "./profile";
 
 /** How to reach relays; shared by every feature that reads from them. */
 export interface RelayOptions {
-  /** Relays this app reads from. There is no default: this library never picks relays for you. */
+  /**
+   * Relays this app reads from. There is no default: this library never picks relays for you.
+   * On the server, setting them fills a new user from their kind 0 profile at sign-up
+   * (best effort; sign-up waits on the lookup up to `relayTimeoutMs`).
+   */
   relays?: [string, ...string[]];
   /** How long to wait on relays, in milliseconds. Defaults to 5000. */
   relayTimeoutMs?: number;
@@ -51,19 +55,11 @@ interface NostrBaseOptions extends RelayOptions {
   mapProfileToUser?: (
     profile: NostrProfile,
   ) => NostrMappedUser | Promise<NostrMappedUser>;
-  /** Update an existing user's fields from their profile on every sign-in. Defaults to false. */
+  /** Also refresh an existing user's fields from their profile on every sign-in; needs `relays`. Defaults to false. */
   overrideUserInfoOnSignIn?: boolean;
 }
 
-export type NostrOptions = NostrBaseOptions &
-  (
-    | { fetchProfileOnSignIn?: false }
-    | {
-        /** Query `relays` for the user's kind 0 profile at sign-in. A failed or slow lookup never blocks sign-in. */
-        fetchProfileOnSignIn: true;
-        relays: [string, ...string[]];
-      }
-  );
+export type NostrOptions = NostrBaseOptions;
 
 export interface Nostr {
   id: string;

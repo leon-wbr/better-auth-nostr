@@ -26,11 +26,11 @@ describe("relay options at the type level", () => {
     nostrClient({ relays: [] });
   });
 
-  it("requires relays when fetchProfileOnSignIn is on", () => {
-    nostr({ relays: ["wss://relay.example.com"], fetchProfileOnSignIn: true });
-    nostr({ fetchProfileOnSignIn: false });
-    // @ts-expect-error fetchProfileOnSignIn needs relays
-    nostr({ fetchProfileOnSignIn: true });
+  it("rejects an empty server relay list", () => {
+    nostr({ relays: ["wss://relay.example.com"] });
+    nostr();
+    // @ts-expect-error relays must name at least one relay
+    nostr({ relays: [] });
   });
 
   it("keeps identity and email out of mapProfileToUser", () => {
@@ -39,7 +39,6 @@ describe("relay options at the type level", () => {
     expectTypeOf<NostrMappedUser["id"]>().toEqualTypeOf<undefined>();
     nostr({
       relays: ["wss://relay.example.com"],
-      fetchProfileOnSignIn: true,
       // @ts-expect-error email cannot be mapped from a kind 0 profile
       mapProfileToUser: () => ({ email: "alice@example.com" }),
     });
