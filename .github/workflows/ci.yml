@@ -1,12 +1,22 @@
 name: CI
 
+# Tests and the build run locally (`npm run ci:local`, see README). CI keeps
+# only the cheap lint + typecheck gate on pull requests.
 on:
-  push:
-    branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "**/*.md"
+      - "LICENSE"
+      - "examples/**"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  check:
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -14,8 +24,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # The lockfile is written by the npm in package.json's packageManager;
+      # Node 22's bundled npm 10 rejects it as out of sync.
+      - run: npm install -g npm@11.6.2
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
-      - run: npm run build
