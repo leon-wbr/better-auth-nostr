@@ -8,7 +8,7 @@ import { nostr } from "../src/index";
 import type { NostrOptions } from "../src/types";
 
 export const TEST_ORIGIN = "http://localhost:3000";
-export const TEST_BASE_PATH = "/api/auth";
+const TEST_BASE_PATH = "/api/auth";
 export const TEST_BASE_URL = `${TEST_ORIGIN}${TEST_BASE_PATH}`;
 
 const createMemoryDb = (modelName: string): MemoryDB => ({
