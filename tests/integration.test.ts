@@ -9,6 +9,9 @@ import {
   signLoginToken,
 } from "./helpers";
 
+/** Lets the clock move on so later verification rows get a later createdAt. */
+const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
+
 describe("POST /nostr/nonce", () => {
   it("issues a nonce for a valid hex pubkey", async () => {
     const auth = createTestAuth();
@@ -38,6 +41,19 @@ describe("POST /nostr/nonce", () => {
     });
 
     expect(nonce).toBe("fixed-nonce-123");
+  });
+
+  it.each([
+    ["too short", "short"],
+    ["too long", "a".repeat(250)],
+    ["outside the allowed characters", "has spaces in it"],
+  ])("rejects a custom getNonce() value that is %s", async (_, value) => {
+    const auth = createTestAuth({ getNonce: async () => value });
+    const keypair = makeKeypair();
+
+    await expect(
+      auth.api.getNostrNonce({ body: { publicKey: keypair.publicKey } }),
+    ).rejects.toThrow(/getNonce/);
   });
 });
 
@@ -90,6 +106,79 @@ describe("POST /nostr/login", () => {
       auth.api.loginNostr({
         body: { nonce },
         headers: new Headers({ authorization: token }),
+      }),
+    ).rejects.toThrow(/Invalid or expired nonce/);
+  });
+
+  const loginWith = (
+    auth: ReturnType<typeof createTestAuth>,
+    nonce: string,
+    token: string,
+  ) =>
+    auth.api.loginNostr({
+      body: { nonce },
+      headers: new Headers({ authorization: token }),
+      asResponse: true,
+    });
+
+  it("keeps an earlier nonce valid after a later nonce request for the same pubkey", async () => {
+    const auth = createTestAuth();
+    const keypair = makeKeypair();
+
+    const nonce = await issueNonce(auth, keypair);
+    await tick();
+    await issueNonce(auth, keypair);
+    await tick();
+    await issueNonce(auth, keypair);
+
+    const res = await loginWith(
+      auth,
+      nonce,
+      await signLoginToken(keypair, nonce),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("accepts two concurrent nonces for one pubkey, each once", async () => {
+    const auth = createTestAuth();
+    const keypair = makeKeypair();
+
+    const first = await issueNonce(auth, keypair);
+    const second = await issueNonce(auth, keypair);
+    expect(first).not.toBe(second);
+
+    const firstToken = await signLoginToken(keypair, first);
+    const secondToken = await signLoginToken(keypair, second);
+
+    const [a, b] = await Promise.all([
+      loginWith(auth, second, secondToken),
+      loginWith(auth, first, firstToken),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+
+    for (const [nonce, token] of [
+      [first, firstToken],
+      [second, secondToken],
+    ] as const) {
+      const replay = await loginWith(auth, nonce, token);
+      expect(replay.status).toBe(401);
+    }
+  });
+
+  it("rejects a nonce that was issued for a different pubkey", async () => {
+    const auth = createTestAuth();
+    const alice = makeKeypair();
+    const bob = makeKeypair();
+
+    const nonce = await issueNonce(auth, alice);
+
+    await expect(
+      auth.api.loginNostr({
+        body: { nonce },
+        headers: new Headers({
+          authorization: await signLoginToken(bob, nonce),
+        }),
       }),
     ).rejects.toThrow(/Invalid or expired nonce/);
   });
@@ -215,6 +304,44 @@ describe("POST /nostr/add-pubkey", () => {
     headers.set("authorization", token);
 
     await auth.api.addPubkey({ body: { nonce }, headers });
+
+    await expect(
+      auth.api.addPubkey({ body: { nonce }, headers }),
+    ).rejects.toThrow(/Invalid or expired nonce/);
+  });
+
+  it("keeps an earlier add-pubkey nonce valid after a later nonce request", async () => {
+    const auth = createTestAuth();
+    const primary = makeKeypair();
+    const secondary = makeKeypair();
+
+    const sessionHeaders = cookiesFromResponse(
+      await performLogin(auth, primary),
+    );
+
+    const nonce = await issueNonce(auth, secondary);
+    await tick();
+    await issueNonce(auth, secondary);
+
+    const headers = new Headers(sessionHeaders);
+    headers.set("authorization", await signAddPubkeyToken(secondary, nonce));
+    const result = await auth.api.addPubkey({ body: { nonce }, headers });
+    expect(result.pubkey.publicKey).toBe(secondary.publicKey);
+  });
+
+  it("rejects an add-pubkey nonce that was issued for a different pubkey", async () => {
+    const auth = createTestAuth();
+    const primary = makeKeypair();
+    const secondary = makeKeypair();
+    const other = makeKeypair();
+
+    const sessionHeaders = cookiesFromResponse(
+      await performLogin(auth, primary),
+    );
+
+    const nonce = await issueNonce(auth, other);
+    const headers = new Headers(sessionHeaders);
+    headers.set("authorization", await signAddPubkeyToken(secondary, nonce));
 
     await expect(
       auth.api.addPubkey({ body: { nonce }, headers }),

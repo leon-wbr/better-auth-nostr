@@ -18,7 +18,36 @@ const PUBKEY_REGEX = /^[a-f0-9]{64}$/i;
 
 const createDefaultNonce = () => randomBytes(16).toString("hex");
 
-const verificationKey = (publicKey: string) => `nostr:${publicKey}`;
+const VERIFICATION_PREFIX = "nostr:";
+/** Fits Better Auth's 255-character verification identifier with the prefix. */
+const NONCE_REGEX = /^[A-Za-z0-9_-]{8,249}$/;
+
+/**
+ * Each nonce gets its own verification row, keyed by the nonce and holding
+ * the pubkey it was issued for, so nonces for one pubkey don't replace each
+ * other.
+ */
+const verificationKey = (nonce: string) => `${VERIFICATION_PREFIX}${nonce}`;
+
+/**
+ * Consumes the nonce exactly once and checks that it was issued for the
+ * pubkey that signed the event.
+ */
+const consumeNonce = async (
+  ctx: GenericEndpointContext,
+  nonce: string,
+  pubkey: string,
+) => {
+  const verification =
+    await ctx.context.internalAdapter.consumeVerificationValue(
+      verificationKey(nonce),
+    );
+  if (!verification || verification.value !== pubkey.toLowerCase()) {
+    throw new APIError("UNAUTHORIZED", {
+      message: "Invalid or expired nonce",
+    });
+  }
+};
 
 const buildEndpointUrl = (baseURL: string, path: string) => {
   const trimmed = baseURL.endsWith("/") ? baseURL.slice(0, -1) : baseURL;
@@ -123,10 +152,15 @@ export const getNostrNonce = (opts?: NostrOptions) =>
       const { publicKey } = ctx.body;
       const ttlMs = opts?.nonceTtlMs ?? DEFAULT_NONCE_TTL;
       const nonce = (await opts?.getNonce?.()) ?? createDefaultNonce();
+      if (!NONCE_REGEX.test(nonce)) {
+        throw new APIError("INTERNAL_SERVER_ERROR", {
+          message: "getNonce() must return 8-249 characters from [A-Za-z0-9_-]",
+        });
+      }
 
       await ctx.context.internalAdapter.createVerificationValue({
-        identifier: verificationKey(publicKey),
-        value: nonce,
+        identifier: verificationKey(nonce),
+        value: publicKey.toLowerCase(),
         expiresAt: new Date(Date.now() + ttlMs),
       });
 
@@ -180,16 +214,7 @@ export const loginNostr = (opts?: NostrOptions) =>
         });
       });
 
-      const verification =
-        await ctx.context.internalAdapter.consumeVerificationValue(
-          verificationKey(event.pubkey),
-        );
-
-      if (!verification || verification.value !== nonce) {
-        throw new APIError("UNAUTHORIZED", {
-          message: "Invalid or expired nonce",
-        });
-      }
+      await consumeNonce(ctx, nonce, event.pubkey);
 
       const { model, pubkeyField } = resolveModel(opts);
 
@@ -341,16 +366,7 @@ export const addPubkey = (opts?: NostrOptions) =>
         });
       });
 
-      const verification =
-        await ctx.context.internalAdapter.consumeVerificationValue(
-          verificationKey(event.pubkey),
-        );
-
-      if (!verification || verification.value !== nonce) {
-        throw new APIError("UNAUTHORIZED", {
-          message: "Invalid or expired nonce",
-        });
-      }
+      await consumeNonce(ctx, nonce, event.pubkey);
 
       const { model, pubkeyField } = resolveModel(opts);
 
