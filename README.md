@@ -5,13 +5,26 @@
 </p>
 
 <p align="center">
-  A thin, standards-aware bridge that lets <a href="https://www.better-auth.com/">Better Auth</a> authenticate with Nostr (<a href="https://github.com/nostr-protocol/nips/blob/master/98.md">NIP-98</a>) and keeps pubkeys synced with your users.
+  A thin, standards-aware bridge that lets <a href="https://better-auth.com/">Better Auth</a> authenticate with Nostr (<a href="https://github.com/nostr-protocol/nips/blob/master/98.md">NIP-98</a>) and keeps pubkeys synced with your users.
 </p>
 
 <p align="center">
 <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 <a href="https://www.npmjs.com/package/better-auth-nostr"><img src="https://img.shields.io/npm/v/better-auth-nostr.svg" alt="npm version"></a>
 </p>
+
+## Contents
+
+- [Overview](#-overview)
+- [Installation](#installation)
+- [Example](#example)
+- [Relays](#relays)
+- [Requirements](#requirements)
+- [Configuration Options](#configuration-options)
+- [Development](#development)
+- [Project Status](#project-status)
+- [Get Involved](#get-involved)
+- [License](#license)
 
 ## 🧭 Overview
 
@@ -22,6 +35,14 @@ This plugin exposes both a server-side `nostr` plugin and a client helper so Bet
 - link additional pubkeys to an existing account through an authenticated endpoint.
 
 It is designed to be as simple as possible, dropping decentralized login flows into traditional apps with minimal wiring.
+
+## Installation
+
+```bash
+npm install better-auth better-auth-nostr
+```
+
+The other peer dependencies (`@better-auth/core`, `@better-auth/utils`, `@better-fetch/fetch`, `nanostores`) are installed for you by npm 7 and later. With another package manager, add them yourself.
 
 ## Example
 
@@ -153,14 +174,16 @@ It runs in the browser and makes no server request. Relay hints from an `nprofil
 
 This plugin ships with no default relays, on purpose. Which relays your app talks to is a product decision (privacy, reliability, censorship resistance, who sees your users' pubkeys and IPs), and a library that picks for you makes that decision silently. Every feature that reads from relays therefore needs `relays` configured; leaving it out is a type error.
 
-| Option           | Description                                                     |
-| ---------------- | --------------------------------------------------------------- |
-| `relays`                   | Relays the server reads from. No default. When set, a new user is filled from their kind `0` profile at sign-up; when unset, no lookup happens. See [Relays](#relays). |
-| `relayTimeoutMs` | How long to wait on relays, in milliseconds. Defaults to 5000.  |
+Two options set this up. Both are top-level options of `nostr()` and `nostrClient()`, since they describe how to reach relays rather than what a feature does with the data:
 
-Both are top-level options of `nostr()` and `nostrClient()`, since they describe how to reach relays rather than what a feature does with the data. The client follows relay hints from `nprofile`s and NIP-05 records, because there they only make the user's own browser connect somewhere.
+- `relays`: the relays to read from. No default.
+- `relayTimeoutMs`: how long to wait on relays, in milliseconds. Defaults to 5000.
+
+The full list is in [Configuration Options](#configuration-options). The client follows relay hints from `nprofile`s and NIP-05 records, because there they only make the user's own browser connect somewhere.
 
 ## Requirements
+
+Node.js `>= 20`.
 
 Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerificationValue`, which was introduced in 1.7.0.
 
@@ -182,7 +205,7 @@ Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerific
 | `mapProfileToUser`         | Map the profile to user fields, sync or async. The result is spread over the default mapping; extra keys go to additional fields. |
 | `overrideUserInfoOnSignIn` | Also refresh an existing user from their profile on every sign-in, not only at sign-up. Needs `relays`. Defaults to `false`.        |
 
-#### Filling the user from the Nostr profile
+### Filling the user from the Nostr profile
 
 The profile options mirror `mapProfileToUser` and `overrideUserInfoOnSignIn` on Better Auth's social providers, so they behave the way you already know:
 
@@ -200,7 +223,7 @@ The default mapping, the counterpart of GitHub's `name || login` and `avatar_url
 
 Two things differ from a social provider, both because kind `0` is a self-claimed, best-effort relay lookup rather than part of an OAuth handshake. The lookup is best effort, and one that fails, times out or finds nothing falls back to the npub instead of failing sign-in. And `email`, `emailVerified` and `id` are typed `never` in `NostrMappedUser`: identity is the signing pubkey, and the email stays `generateEmail`'s job. The server queries only your `relays`; it never follows relay hints or resolves NIP-05, since that would let user input pick the hosts it connects to.
 
-The plugin exports its schema so the underlying adapter sets up indexes and the foreign key to `user` automatically.
+The plugin exports its schema, so the underlying adapter sets up indexes and the foreign key to `user` automatically.
 
 ### Client exports
 
@@ -228,7 +251,7 @@ See `src/routes.ts` and `src/client.ts` for the endpoint and action wiring, and 
 Releases are cut from a tag and published by `.github/workflows/release.yml`. There is nothing to run by hand:
 
 ```bash
-npm version minor        # bumps package.json, commits, tags v0.3.0
+npm version minor        # bumps package.json, commits, and tags it (v0.5.0 -> v0.6.0)
 git push --follow-tags
 ```
 
@@ -246,7 +269,8 @@ Most Nostr logins today live in bespoke, one-off integrations. Packaging it as a
 ## Project Status
 
 - Stage: early but stable for login and basic pubkey management.
-- Contributions that extend the feature set (e.g. pubkey revocation, multi-key UX, profile sync from relays) or polish the docs are welcome.
+- Contributions that extend the feature set (e.g. pubkey revocation, multi-key UX) or polish the docs are welcome.
+- Profile sync from relays is already available: see [Filling the user from the Nostr profile](#filling-the-user-from-the-nostr-profile).
 
 ## Get Involved
 
