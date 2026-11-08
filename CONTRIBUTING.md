@@ -42,6 +42,8 @@ npm run ci:local    # lint + typecheck + tests with coverage thresholds + build
 
 GitHub Actions runs the same `npm run ci:local` on every pull request that isn't a draft. `npm run check` is the same without the build. The coverage thresholds live in `vitest.config.ts`, so a change that drops coverage below them fails the gate.
 
+`npm run mutate` runs Stryker over `src/routes.ts` and `src/signer.ts`, where a flipped comparison is a security bug that line coverage can't see. It takes a few minutes, so it runs on demand, not in CI; the HTML report lands in `reports/stryker/`. When you change the NIP-98 checks or the signers, run it and don't let the score drop. `stryker.config.json` points `tsconfigFile` at a file that doesn't exist on purpose: Stryker's tsconfig preprocessor calls a TypeScript API that TypeScript 7 no longer has.
+
 ## Pull requests
 
 - Keep a pull request to one change. Several small ones are easier to review than one large one.
