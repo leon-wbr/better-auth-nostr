@@ -1,39 +1,34 @@
+# Synced from the platform repo (templates/ts-lib). Change it there, then sync.
 name: CI
 
-# Tests and the build run locally (`npm run ci:local`, see README). CI keeps
-# only the cheap lint + typecheck gate, on pull requests and on main, so main's
-# status reflects its current head rather than the last run before a fix.
+# Required check: "check". No paths filter: a required check that never runs
+# leaves the PR unmergeable. Drafts skip the job, which counts as passing.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths-ignore:
-      - "**/*.md"
-      - "LICENSE"
-      - "examples/**"
   push:
     branches: [main]
-    paths-ignore:
-      - "**/*.md"
-      - "LICENSE"
-      - "examples/**"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
-      # The lockfile is written by the npm in package.json's packageManager;
-      # Node 22's bundled npm 10 rejects it as out of sync.
+      # The lockfile is written by the npm in packageManager; Node's bundled npm may reject it.
       - run: npm install -g npm@11.6.2
       - run: npm ci
       - run: npm run lint
