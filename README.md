@@ -175,7 +175,7 @@ Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerific
 | `modelName`                | Override the `nostrPubkey` model name registered in the schema.                                                                   |
 | `fields`                   | Customize field names for `name`, `publicKey`, `userId`, and `createdAt`.                                                         |
 | `nonceTtlMs`               | Nonce time-to-live in milliseconds. Defaults to 5 minutes.                                                                        |
-| `getNonce`                 | Custom nonce generator. Must return `Promise<string>`.                                                                            |
+| `getNonce`                 | Custom nonce generator. Must return `Promise<string>` of 8–249 characters from `[A-Za-z0-9_-]`, unique per request.               |
 | `generateEmail`            | Customize the email used when implicitly creating a user. Receives the npub and the hex pubkey.                                   |
 | `relays`                   | Relays the server reads from. No default. When set, a new user is filled from their kind `0` profile at sign-up; when unset, no lookup happens. See [Relays](#relays). |
 | `relayTimeoutMs`           | How long to wait on relays, in milliseconds. Defaults to 5000.                                                                    |

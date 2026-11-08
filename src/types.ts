@@ -38,6 +38,8 @@ interface NostrBaseOptions extends RelayOptions {
   /**
    * Function to generate a unique nonce for each sign-in attempt.
    * You can implement this function to override the default nonce generator.
+   * Each call must return a fresh value of 8-249 characters from
+   * `[A-Za-z0-9_-]`.
    */
   getNonce?: () => Promise<string>;
   /**
