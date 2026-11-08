@@ -2,7 +2,7 @@ import { createAuthClient } from "better-auth/client";
 import { describe, expectTypeOf, it } from "vitest";
 import { nostrClient } from "../src/client";
 import { nostr } from "../src/index";
-import type { NostrMappedUser } from "../src/types";
+import type { Nostr, NostrMappedUser, NostrPubkey } from "../src/types";
 
 describe("relay options at the type level", () => {
   it("exposes nostr.getProfile only when relays are configured", () => {
@@ -42,5 +42,10 @@ describe("relay options at the type level", () => {
       // @ts-expect-error email cannot be mapped from a kind 0 profile
       mapProfileToUser: () => ({ email: "alice@example.com" }),
     });
+  });
+
+  it("keeps Nostr as an alias of the NostrPubkey row type", () => {
+    expectTypeOf<Nostr>().toEqualTypeOf<NostrPubkey>();
+    expectTypeOf<NostrPubkey["id"]>().toEqualTypeOf<string>();
   });
 });

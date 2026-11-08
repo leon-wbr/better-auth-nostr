@@ -26,9 +26,16 @@ export type NostrMappedUser = {
   [key: string]: unknown;
 };
 
-interface NostrBaseOptions extends RelayOptions {
+export interface NostrOptions extends RelayOptions {
+  /**
+   * @deprecated Has no effect. Use `disableImplicitSignUp` to reject pubkeys
+   * that are not linked to a user yet.
+   * @todo Implement requestSignup
+   */
   disableSignUp?: boolean;
-  /** @todo Implement requestSignup */
+  /**
+   * Reject logins from pubkeys that are not linked to a user yet.
+   */
   disableImplicitSignUp?: boolean;
   modelName?: string;
   /**
@@ -61,9 +68,8 @@ interface NostrBaseOptions extends RelayOptions {
   overrideUserInfoOnSignIn?: boolean;
 }
 
-export type NostrOptions = NostrBaseOptions;
-
-export interface Nostr {
+/** A row of the `nostrPubkey` model, as stored and as returned to clients. */
+export interface NostrPubkey {
   id: string;
   publicKey: string;
   userId: string;
@@ -71,10 +77,5 @@ export interface Nostr {
   createdAt: Date;
 }
 
-export type NostrPubkey = {
-  id?: string;
-  name?: string | undefined;
-  publicKey: string;
-  userId: string;
-  createdAt: Date;
-};
+/** @deprecated Use `NostrPubkey`. */
+export type Nostr = NostrPubkey;
