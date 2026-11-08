@@ -37,10 +37,10 @@ npm run build       # tsdown into dist/
 Before opening a pull request, run the same gate the maintainers use:
 
 ```bash
-npm run ci:local    # lint + typecheck + tests + build
+npm run ci:local    # lint + typecheck + tests with coverage thresholds + build
 ```
 
-GitHub Actions only runs lint and typecheck, so the tests and the build on your machine are what keep `main` working.
+GitHub Actions runs the same `npm run ci:local` on every pull request that isn't a draft. `npm run check` is the same without the build. The coverage thresholds live in `vitest.config.ts`, so a change that drops coverage below them fails the gate.
 
 ## Pull requests
 

@@ -10,9 +10,6 @@ import {
   signLoginToken,
 } from "./helpers";
 
-/** Lets the clock move on so later verification rows get a later createdAt. */
-const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
-
 describe("POST /nostr/nonce", () => {
   it("issues a nonce for a valid hex pubkey", async () => {
     const auth = createTestAuth();
@@ -127,9 +124,7 @@ describe("POST /nostr/login", () => {
     const keypair = makeKeypair();
 
     const nonce = await issueNonce(auth, keypair);
-    await tick();
     await issueNonce(auth, keypair);
-    await tick();
     await issueNonce(auth, keypair);
 
     const res = await loginWith(
@@ -367,7 +362,6 @@ describe("POST /nostr/add-pubkey", () => {
     );
 
     const nonce = await issueNonce(auth, secondary);
-    await tick();
     await issueNonce(auth, secondary);
 
     const headers = new Headers(sessionHeaders);
