@@ -1,0 +1,41 @@
+# Synced from the platform repo (templates/common). Change it there, then sync.
+name: PR title
+
+# PRs are squash-merged with the title as the commit message, so the title is what
+# release notes and version bumps are made from. Required check: "PR title".
+# pull_request_target is safe here: the job never checks out the PR's code.
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  pull-requests: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: PR title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Below 1.0 a breaking change bumps the minor version, and only a "!" in the
+      # title makes it one. The label and the "!" must agree.
+      - name: Breaking label and "!" agree
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          bang=false
+          if [[ "$TITLE" =~ ^[a-z]+(\([^\)]+\))?!: ]]; then bang=true; fi
+          label=false
+          if [[ ",$LABELS," == *,breaking,* ]]; then label=true; fi
+          if [ "$bang" != "$label" ]; then
+            echo "::error::Breaking changes need both the 'breaking' label and a '!' before the colon (feat!: ...); other PRs need neither."
+            exit 1
+          fi

@@ -242,22 +242,17 @@ npm run coverage
 npm run ci:local    # lint + typecheck + tests + build: the gate before merging
 ```
 
-GitHub Actions only runs lint and typecheck, on pull requests and on pushes to main, plus the release workflow on tags. Run `npm run ci:local` before merging; tests and the build are not run in CI.
+GitHub Actions runs lint and typecheck on pull requests and on pushes to main, along with the PR-title check and a gitleaks secret scan. Run `npm run ci:local` before merging, because CI doesn't run the tests or the build.
 
 See `src/routes.ts` and `src/client.ts` for the endpoint and action wiring, and `tests/` for end-to-end examples that boot Better Auth against the in-memory adapter. `examples/react` holds a Vite + Better Auth sandbox with its own auth server and migrations.
 
 ### Releasing
 
-Releases are cut from a tag and published by `.github/workflows/release.yml`. There is nothing to run by hand:
+Nobody bumps versions or tags releases by hand. PRs are squash-merged, so each PR title, a [Conventional Commit](https://www.conventionalcommits.org/), becomes the commit. [release-please](https://github.com/googleapis/release-please) reads those commits on `main` and keeps one release PR open, `chore(release): X.Y.Z`, with the version bump and the `CHANGELOG.md` entry. While the version is 0.x, a `feat!:` (breaking) PR bumps the minor version, not the major. A breaking PR also needs the `breaking` label, and the PR-title check fails if the title and the label disagree.
 
-```bash
-npm version minor        # bumps package.json, commits, and tags it (v0.5.0 -> v0.6.0)
-git push --follow-tags
-```
+Merging the release PR is the release. `.github/workflows/release.yml` tags `vX.Y.Z` on main and creates the GitHub release. The publish job then waits for approval in the `npm` environment. Once approved, it typechecks, tests and builds, then publishes to npm through trusted publishing (OIDC). There is no token in the repository, and every tarball carries a provenance attestation.
 
-The workflow refuses to publish if the tag and `package.json` version disagree, then typechecks, tests, builds, publishes to npm, and opens a GitHub release with generated notes. It authenticates through npm trusted publishing (OIDC), so there is no token in the repository and every tarball carries a provenance attestation.
-
-Running the same workflow manually (Actions → Release → Run workflow) does everything except publish: it performs the real OIDC token exchange through `npm publish --dry-run` and fails if npm does not hand back a token. Use it to confirm the trusted publisher entry still works before cutting a tag.
+Running the release workflow manually (Actions → Release → Run workflow) publishes nothing. It performs the real OIDC token exchange through `npm publish --dry-run` and fails if npm doesn't hand back a token, which confirms that the trusted publisher entry still works.
 
 ## Why It Matters
 
