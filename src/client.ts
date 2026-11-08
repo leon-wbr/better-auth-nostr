@@ -21,7 +21,7 @@ import {
   type SignerSource,
   withTimeout,
 } from "./signer";
-import type { Nostr, RelayOptions } from "./types";
+import type { NostrPubkey, RelayOptions } from "./types";
 
 type ActionError = {
   code: string;
@@ -166,7 +166,7 @@ export const getNostrActions = (
     try {
       const { nonce, token } = await authorize("/nostr/add-pubkey", addOptions);
 
-      return await $fetch<{ pubkey: Nostr }>("/nostr/add-pubkey", {
+      return await $fetch<{ pubkey: NostrPubkey }>("/nostr/add-pubkey", {
         method: "POST",
         headers: { authorization: token },
         body: { nonce, name: addOptions?.name },
@@ -274,7 +274,7 @@ export const getNostrActions = (
   return {
     signIn: { nostr: signInNostr },
     nostr: { addPubkey, signEvent, getProfile },
-    $Infer: {} as { Nostr: Nostr },
+    $Infer: {} as { Nostr: NostrPubkey },
   };
 };
 

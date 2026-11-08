@@ -193,7 +193,7 @@ Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerific
 
 | Option                     | Description                                                                                                                       |
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `disableSignUp`            | Reserved for future request-gated signup flows. Currently a no-op.                                                                |
+| `disableSignUp`            | Deprecated, has no effect. Use `disableImplicitSignUp`.                                                                           |
 | `disableImplicitSignUp`    | Reject logins from unseen pubkeys instead of auto-creating a Better Auth user.                                                    |
 | `modelName`                | Override the `nostrPubkey` model name registered in the schema.                                                                   |
 | `fields`                   | Customize field names for `name`, `publicKey`, `userId`, and `createdAt`.                                                         |
