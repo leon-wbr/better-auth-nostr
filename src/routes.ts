@@ -54,6 +54,46 @@ const buildEndpointUrl = (baseURL: string, path: string) => {
   return `${trimmed}${path.startsWith("/") ? path : `/${path}`}`;
 };
 
+/**
+ * Runs every check a NIP-98 request has to pass before it is trusted: a
+ * token in the Authorization header, a nonce in the body, a valid event
+ * signed for this endpoint's URL, method and body, and a nonce that was
+ * issued for the signer and is consumed here, once. Returns the signer.
+ */
+const verifyNip98Request = async (
+  ctx: GenericEndpointContext & { body: { nonce: string } },
+  path: "/nostr/login" | "/nostr/add-pubkey",
+): Promise<string> => {
+  const token = ctx.headers?.get("authorization");
+  if (!token) {
+    throw new APIError("BAD_REQUEST", {
+      message: "Missing NIP-98 authorization token",
+    });
+  }
+
+  const nonce = ctx.body.nonce.trim();
+  if (!nonce) {
+    throw new APIError("BAD_REQUEST", { message: "Missing nonce" });
+  }
+
+  const event = await unpackEventFromToken(token).catch((error: unknown) => {
+    throw new APIError("BAD_REQUEST", {
+      message: (error instanceof Error && error.message) || "Invalid token",
+    });
+  });
+
+  const url = buildEndpointUrl(ctx.context.baseURL, path);
+  await validateEvent(event, url, "post", { nonce }).catch((error: unknown) => {
+    throw new APIError("UNAUTHORIZED", {
+      message:
+        (error instanceof Error && error.message) || "Invalid NIP-98 event",
+    });
+  });
+
+  await consumeNonce(ctx, nonce, event.pubkey);
+  return event.pubkey;
+};
+
 const resolveModel = (opts?: NostrOptions) => ({
   model: opts?.modelName ?? "nostrPubkey",
   pubkeyField: opts?.fields?.publicKey ?? "publicKey",
@@ -189,38 +229,13 @@ export const loginNostr = (opts?: NostrOptions) =>
       },
     },
     async (ctx) => {
-      const token = ctx.headers?.get("authorization") ?? "";
-      if (!token) {
-        throw new APIError("BAD_REQUEST", {
-          message: "Missing authorization token",
-        });
-      }
-
-      const nonce = ctx.body.nonce.trim();
-      if (!nonce) {
-        throw new APIError("BAD_REQUEST", { message: "Missing nonce" });
-      }
-
-      const event = await unpackEventFromToken(token).catch((error) => {
-        throw new APIError("BAD_REQUEST", {
-          message: error?.message || "Invalid token",
-        });
-      });
-
-      const loginUrl = buildEndpointUrl(ctx.context.baseURL, "/nostr/login");
-      await validateEvent(event, loginUrl, "post", { nonce }).catch((error) => {
-        throw new APIError("UNAUTHORIZED", {
-          message: error?.message || "Invalid NIP-98 event",
-        });
-      });
-
-      await consumeNonce(ctx, nonce, event.pubkey);
+      const pubkey = await verifyNip98Request(ctx, "/nostr/login");
 
       const { model, pubkeyField } = resolveModel(opts);
 
       let nostrPubkey = await ctx.context.adapter.findOne<NostrPubkey>({
         model,
-        where: [{ field: pubkeyField, value: event.pubkey }],
+        where: [{ field: pubkeyField, value: pubkey }],
       });
 
       let user: User | null = null;
@@ -232,17 +247,11 @@ export const loginNostr = (opts?: NostrOptions) =>
           });
         }
 
-        const npub = nip19.npubEncode(event.pubkey);
+        const npub = nip19.npubEncode(pubkey);
         const email =
-          (await opts?.generateEmail?.(npub, event.pubkey)) ??
-          `${npub}@nostr.local`;
+          (await opts?.generateEmail?.(npub, pubkey)) ?? `${npub}@nostr.local`;
 
-        const userInfo = await userInfoFromProfile(
-          ctx,
-          opts,
-          event.pubkey,
-          "create",
-        );
+        const userInfo = await userInfoFromProfile(ctx, opts, pubkey, "create");
 
         user = await ctx.context.internalAdapter.createUser(
           {
@@ -261,7 +270,7 @@ export const loginNostr = (opts?: NostrOptions) =>
         nostrPubkey = await ctx.context.adapter.create<NostrPubkey>({
           model,
           data: {
-            publicKey: event.pubkey,
+            publicKey: pubkey,
             userId: user.id,
             createdAt: new Date(),
           },
@@ -283,7 +292,7 @@ export const loginNostr = (opts?: NostrOptions) =>
           const userInfo = await userInfoFromProfile(
             ctx,
             opts,
-            event.pubkey,
+            pubkey,
             "update",
           );
           if (userInfo) {
@@ -341,38 +350,13 @@ export const addPubkey = (opts?: NostrOptions) =>
         throw new APIError("UNAUTHORIZED", { message: "Not signed in" });
       }
 
-      const token = ctx.headers?.get("authorization") ?? "";
-      if (!token) {
-        throw new APIError("BAD_REQUEST", {
-          message: "Missing NIP-98 authorization token",
-        });
-      }
-
-      const nonce = ctx.body.nonce.trim();
-      if (!nonce) {
-        throw new APIError("BAD_REQUEST", { message: "Missing nonce" });
-      }
-
-      const event = await unpackEventFromToken(token).catch((error) => {
-        throw new APIError("BAD_REQUEST", {
-          message: error?.message || "Invalid token",
-        });
-      });
-
-      const addUrl = buildEndpointUrl(ctx.context.baseURL, "/nostr/add-pubkey");
-      await validateEvent(event, addUrl, "post", { nonce }).catch((error) => {
-        throw new APIError("UNAUTHORIZED", {
-          message: error?.message || "Invalid NIP-98 event",
-        });
-      });
-
-      await consumeNonce(ctx, nonce, event.pubkey);
+      const signer = await verifyNip98Request(ctx, "/nostr/add-pubkey");
 
       const { model, pubkeyField } = resolveModel(opts);
 
       const existing = await ctx.context.adapter.findOne<NostrPubkey>({
         model,
-        where: [{ field: pubkeyField, value: event.pubkey }],
+        where: [{ field: pubkeyField, value: signer }],
       });
 
       if (existing && existing.userId !== session.user.id) {
@@ -387,7 +371,7 @@ export const addPubkey = (opts?: NostrOptions) =>
       const pubkey = await ctx.context.adapter.create<NostrPubkey>({
         model,
         data: {
-          publicKey: event.pubkey,
+          publicKey: signer,
           userId: session.user.id,
           name: ctx.body.name,
           createdAt: new Date(),
