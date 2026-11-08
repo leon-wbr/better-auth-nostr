@@ -74,6 +74,45 @@ const clientEndpointURL = (
   return endpointURL(base, path);
 };
 
+/**
+ * Signs with a timeout and rejects an event from a different key than
+ * `expectedPubkey` or whose signature does not verify. Both `signEvent` and the
+ * NIP-98 sign-in path go through here.
+ */
+const signVerified = async (
+  signer: NostrSigner,
+  template: EventTemplate,
+  expectedPubkey: string,
+  timeoutMs: number,
+  keyMismatchHint = "",
+): Promise<NostrEvent> => {
+  const event = await withTimeout(
+    signer.signEvent(template),
+    timeoutMs,
+    "The signer did not respond in time",
+  );
+  if (event.pubkey !== expectedPubkey) {
+    throw new Error(
+      `The signer signed with a different key than it reported${keyMismatchHint}`,
+    );
+  }
+  // Rebuilt from protocol fields so nostr-tools' cached verification
+  // flag on the signer's object cannot vouch for mutated content.
+  const fresh: NostrEvent = {
+    id: event.id,
+    pubkey: event.pubkey,
+    created_at: event.created_at,
+    kind: event.kind,
+    tags: event.tags,
+    content: event.content,
+    sig: event.sig,
+  };
+  if (!verifyEvent(fresh)) {
+    throw new Error("The signer returned an invalid event");
+  }
+  return fresh;
+};
+
 export const getNostrActions = (
   $fetch: BetterFetch,
   { $store }: { $store: ClientStore },
@@ -102,18 +141,15 @@ export const getNostrActions = (
       url,
       "post",
       async (event) => {
-        const signed = await withTimeout(
-          signer.signEvent(event),
-          timeoutMs,
-          "The signer did not respond in time",
-        );
         // A signer that switched accounts mid-flow would otherwise fail later
         // as "invalid or expired nonce", pointing at the wrong problem.
-        if (signed.pubkey !== publicKey) {
-          throw new Error(
-            "The signer signed with a different key than it reported — sign in again",
-          );
-        }
+        const signed = await signVerified(
+          signer,
+          event,
+          publicKey,
+          timeoutMs,
+          " — sign in again",
+        );
         return assertFreshlySigned(signed);
       },
       true,
@@ -204,35 +240,13 @@ export const getNostrActions = (
   > => {
     try {
       const signer = resolveSigner(source);
-      const signed = await withTimeout(
-        (async () => {
-          const publicKey = await signer.getPublicKey();
-          return { publicKey, event: await signer.signEvent(template) };
-        })(),
-        source?.timeoutMs ?? DEFAULT_SIGNER_TIMEOUT_MS,
+      const timeoutMs = source?.timeoutMs ?? DEFAULT_SIGNER_TIMEOUT_MS;
+      const publicKey = await withTimeout(
+        signer.getPublicKey(),
+        timeoutMs,
         "The signer did not respond in time",
-      ).then(({ publicKey, event }) => {
-        if (event.pubkey !== publicKey) {
-          throw new Error(
-            "The signer signed with a different key than it reported",
-          );
-        }
-        // Rebuilt from protocol fields so nostr-tools' cached verification
-        // flag on the signer's object cannot vouch for mutated content.
-        const fresh: NostrEvent = {
-          id: event.id,
-          pubkey: event.pubkey,
-          created_at: event.created_at,
-          kind: event.kind,
-          tags: event.tags,
-          content: event.content,
-          sig: event.sig,
-        };
-        if (!verifyEvent(fresh)) {
-          throw new Error("The signer returned an invalid event");
-        }
-        return fresh;
-      });
+      );
+      const signed = await signVerified(signer, template, publicKey, timeoutMs);
       return { data: signed, error: null };
     } catch (err) {
       return {
