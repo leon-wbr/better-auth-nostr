@@ -253,6 +253,7 @@ Most Nostr logins today live in bespoke, one-off integrations. Packaging it as a
 - Try the plugin in your Better Auth app and report bugs at [github.com/leon-wbr/better-auth-nostr/issues](https://github.com/leon-wbr/better-auth-nostr/issues).
 - Open a pull request to add client actions, extend the schema, or improve docs.
 - Share ideas for future Nostr flows on the issue tracker.
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) for every way to help, from testing your signer to reviewing pull requests, and how to run the checks locally.
 
 ## License
 
