@@ -1,7 +1,8 @@
 name: CI
 
 # Tests and the build run locally (`npm run ci:local`, see README). CI keeps
-# only the cheap lint + typecheck gate on pull requests.
+# only the cheap lint + typecheck gate, on pull requests and on main, so main's
+# status reflects its current head rather than the last run before a fix.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -9,6 +10,13 @@ on:
       - "**/*.md"
       - "LICENSE"
       - "examples/**"
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "LICENSE"
+      - "examples/**"
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -16,7 +24,7 @@ concurrency:
 
 jobs:
   check:
-    if: github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
