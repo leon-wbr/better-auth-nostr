@@ -7,7 +7,7 @@ import {
 import { BunkerSigner } from "nostr-tools/nip46";
 import { verifyEvent } from "nostr-tools/pure";
 import { bytesToHex } from "nostr-tools/utils";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assertFreshlySigned,
   createBunkerSigner,
@@ -218,27 +218,55 @@ describe("remote signer timeouts", () => {
 });
 
 describe("assertFreshlySigned", () => {
+  // Only Date is faked: relay and signer timeouts still need real timers.
+  const NOW_SECONDS = 1_800_000_000;
+  const LIMIT = NIP98_MAX_CLOCK_DRIFT_SECONDS - 5;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW_SECONDS * 1000);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   const at = (offsetSeconds: number) =>
-    ({
-      created_at: Math.round(Date.now() / 1000) - offsetSeconds,
-    }) as any;
+    ({ created_at: NOW_SECONDS - offsetSeconds }) as any;
 
   it("accepts an event signed just now", () => {
     expect(assertFreshlySigned(at(0))).toBeDefined();
   });
 
-  it("accepts an event comfortably inside the window", () => {
-    expect(assertFreshlySigned(at(30))).toBeDefined();
+  it("accepts an event one second inside the window", () => {
+    expect(assertFreshlySigned(at(LIMIT - 1))).toBeDefined();
   });
 
-  it("rejects before the server's limit, leaving room for transit", () => {
+  it("rejects an event exactly at the window edge, leaving room for transit", () => {
+    expect(() => assertFreshlySigned(at(LIMIT))).toThrow(/too long/i);
+  });
+
+  it("rejects well before the server's own limit", () => {
+    expect(LIMIT).toBeLessThan(NIP98_MAX_CLOCK_DRIFT_SECONDS);
     expect(() =>
       assertFreshlySigned(at(NIP98_MAX_CLOCK_DRIFT_SECONDS - 1)),
     ).toThrow(/too long/i);
   });
 
+  it("accepts a signer clock one second inside the future window", () => {
+    expect(assertFreshlySigned(at(-(LIMIT - 1)))).toBeDefined();
+  });
+
   it("names the clock, not the approval, when the signer runs ahead", () => {
+    expect(() => assertFreshlySigned(at(-LIMIT))).toThrow(/clock/i);
     expect(() => assertFreshlySigned(at(-120))).toThrow(/clock/i);
+  });
+
+  it("rounds the current time to the nearest second", () => {
+    vi.setSystemTime(NOW_SECONDS * 1000 + 499);
+    expect(assertFreshlySigned(at(LIMIT - 1))).toBeDefined();
+    vi.setSystemTime(NOW_SECONDS * 1000 + 500);
+    expect(() => assertFreshlySigned(at(LIMIT - 1))).toThrow(/too long/i);
   });
 });
 

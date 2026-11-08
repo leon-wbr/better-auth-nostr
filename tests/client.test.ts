@@ -8,7 +8,7 @@ import {
 } from "nostr-tools";
 import { unpackEventFromToken } from "nostr-tools/nip98";
 import { bytesToHex } from "nostr-tools/utils";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getNostrActions, parseSecretKey } from "../src/client";
 import {
   createTestAuth,
@@ -171,6 +171,16 @@ describe("client sign-in", () => {
 });
 
 describe("remote signer sign-in", () => {
+  // Only Date is faked: the stub signer and the client use real timers.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2027-01-15T12:00:00.000Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   /** Stands in for a NIP-46 bunker: async, and never exposes a secret key. */
   const remoteSigner = (
     keypair: { secretKey: Uint8Array; publicKey: string },
@@ -224,6 +234,22 @@ describe("remote signer sign-in", () => {
     expect(result.data?.pubkey.publicKey).toBe(secondary.publicKey);
   });
 
+  it("accepts a signature one second inside the freshness window", async () => {
+    const auth = createTestAuth();
+    const keypair = makeKeypair();
+    const { $store } = createTestStore();
+
+    const actions = getNostrActions(createTestFetch(auth), { $store }, {
+      baseURL: TEST_ORIGIN,
+    } as any);
+
+    const result = await actions.signIn.nostr({
+      signer: remoteSigner(keypair, { clockSkewSeconds: 54 }),
+    });
+
+    expect(result.error).toBeNull();
+  });
+
   it("reports a slow approval as a timeout rather than an opaque 401", async () => {
     const auth = createTestAuth();
     const keypair = makeKeypair();
@@ -234,7 +260,7 @@ describe("remote signer sign-in", () => {
     } as any);
 
     const result = await actions.signIn.nostr({
-      signer: remoteSigner(keypair, { clockSkewSeconds: 120 }),
+      signer: remoteSigner(keypair, { clockSkewSeconds: 55 }),
     });
 
     expect(result.data).toBeNull();
