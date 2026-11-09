@@ -19,7 +19,7 @@
     "knip": "knip",
     "check": "npm run lint && npm run typecheck && npm run coverage",
     "ci:local": "npm run check && npm run build",
-    "mutate": "stryker run",
+    "mutate": "stryker run stryker.config.ts",
     "prepublishOnly": "npm run build"
   },
   "publishConfig": {
