@@ -31,5 +31,4 @@ jobs:
       # The lockfile is written by the npm in packageManager; Node's bundled npm may reject it.
       - run: npm install -g npm@11.6.2
       - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
+      - run: npm run ci:local

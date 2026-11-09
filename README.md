@@ -238,11 +238,12 @@ npm run dev         # tsdown --watch for local testing
 npm run typecheck
 npm test
 npm run test:watch
-npm run coverage
-npm run ci:local    # lint + typecheck + tests + build: the gate before merging
+npm run coverage    # tests with the coverage thresholds from vitest.config.ts
+npm run check       # lint + typecheck + coverage
+npm run ci:local    # check + build: what CI runs
 ```
 
-GitHub Actions runs lint and typecheck on pull requests and on pushes to main, along with the PR-title check and a gitleaks secret scan. Run `npm run ci:local` before merging, because CI doesn't run the tests or the build.
+GitHub Actions runs `npm run ci:local` on pull requests and on pushes to main, along with the PR-title check and a gitleaks secret scan.
 
 See `src/routes.ts` and `src/client.ts` for the endpoint and action wiring, and `tests/` for end-to-end examples that boot Better Auth against the in-memory adapter. `examples/react` holds a Vite + Better Auth sandbox with its own auth server and migrations.
 
