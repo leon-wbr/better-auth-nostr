@@ -9,7 +9,13 @@ import {
 import { unpackEventFromToken } from "nostr-tools/nip98";
 import { bytesToHex } from "nostr-tools/utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getNostrActions, parseSecretKey } from "../src/client";
+import {
+  getNostrActions,
+  NOSTR_ERROR_CODES,
+  nostrClient,
+  parseSecretKey,
+} from "../src/client";
+import { nostr } from "../src/index";
 import {
   createTestAuth,
   createTestFetch,
@@ -58,6 +64,33 @@ describe("parseSecretKey", () => {
     const sk = generateSecretKey();
     const expected = getPublicKey(sk);
     expect(getPublicKey(parseSecretKey(nip19.nsecEncode(sk)))).toBe(expected);
+  });
+});
+
+describe("$ERROR_CODES", () => {
+  // Better Auth types `authClient.$ERROR_CODES` from the server plugin's
+  // `$ERROR_CODES`; official plugins also put them on the client plugin.
+  it("is exposed by the server and the client plugin", () => {
+    const codes = {
+      NOSTR_SIGN_IN_FAILED: {
+        code: "NOSTR_SIGN_IN_FAILED",
+        message: "Nostr sign-in failed",
+      },
+      NOSTR_ADD_PUBKEY_FAILED: {
+        code: "NOSTR_ADD_PUBKEY_FAILED",
+        message: "Failed to add pubkey",
+      },
+      NOSTR_SIGN_EVENT_FAILED: {
+        code: "NOSTR_SIGN_EVENT_FAILED",
+        message: "Failed to sign event",
+      },
+      NOSTR_GET_PROFILE_FAILED: {
+        code: "NOSTR_GET_PROFILE_FAILED",
+        message: "Failed to fetch profile",
+      },
+    };
+    expect(nostr().$ERROR_CODES).toMatchObject(codes);
+    expect(nostrClient().$ERROR_CODES).toBe(nostr().$ERROR_CODES);
   });
 });
 
@@ -146,6 +179,53 @@ describe("client sign-in", () => {
     const result = await actions.signIn.nostr();
     expect(result.data).toBeNull();
     expect(result.error?.message).toMatch(/NIP-07|NSEC/);
+  });
+
+  // Better Auth's passkey client reports a failed client-side ceremony the
+  // same way: status 400, statusText "BAD_REQUEST", a code from $ERROR_CODES.
+  it("reports a client-side failure as 400 BAD_REQUEST with a plugin error code", async () => {
+    const { $store } = createTestStore();
+    const actions = getNostrActions(
+      createTestFetch(createTestAuth()),
+      {
+        $store,
+      },
+      { baseURL: TEST_ORIGIN } as any,
+    );
+
+    const result = await actions.signIn.nostr();
+
+    expect(result.error).toMatchObject({
+      code: NOSTR_ERROR_CODES.NOSTR_SIGN_IN_FAILED.code,
+      status: 400,
+      statusText: "BAD_REQUEST",
+    });
+  });
+
+  it("keeps the server's own status when the server rejects the sign-in", async () => {
+    const auth = createTestAuth();
+    const keypair = makeKeypair();
+    const { $store, notified } = createTestStore();
+    const $fetch = createTestFetch(auth);
+
+    // Send a nonce the server never issued, so the real handler answers 401.
+    const staleNonceFetch = ((path: string, init?: any) =>
+      ($fetch as any)(
+        path,
+        path === "/nostr/login"
+          ? { ...init, body: { nonce: "never-issued-nonce" } }
+          : init,
+      )) as any;
+    const actions = getNostrActions(staleNonceFetch, { $store }, {
+      baseURL: TEST_ORIGIN,
+    } as any);
+
+    const result = await actions.signIn.nostr({ nsec: nsecFor(keypair) });
+
+    expect(result.data).toBeNull();
+    expect(result.error?.status).toBe(401);
+    expect(result.error?.message).toMatch(/payload tag/);
+    expect(notified).toHaveLength(0);
   });
 
   it("links an additional pubkey through the client action", async () => {
@@ -329,7 +409,27 @@ describe("client signEvent", () => {
 
     expect(result.data).toBeNull();
     expect(result.error?.code).toBe("NOSTR_SIGN_EVENT_FAILED");
+    expect(result.error?.status).toBe(400);
+    expect(result.error?.statusText).toBe("BAD_REQUEST");
     expect(result.error?.message).toMatch(/NIP-07|NSEC/);
+  });
+
+  it("falls back to the code's own message when the thrown value is not an Error", async () => {
+    const signer = {
+      getPublicKey: async () => {
+        throw "no";
+      },
+      signEvent: async () => {
+        throw "no";
+      },
+    };
+
+    const result = await actionsFor().nostr.signEvent(note(), { signer });
+
+    expect(result.error).toMatchObject({
+      code: "NOSTR_SIGN_EVENT_FAILED",
+      message: NOSTR_ERROR_CODES.NOSTR_SIGN_EVENT_FAILED.message,
+    });
   });
 
   it("times out a signer that never answers", async () => {

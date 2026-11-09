@@ -153,6 +153,10 @@ const { data: event, error } = await authClient.nostr.signEvent(
 
 It takes the same `signer` / `nsec` / NIP-07 precedence and `timeoutMs` as `signIn.nostr`, makes no server request, and returns `{ data, error }` like the other actions instead of throwing. The returned event is checked before you see it: its signature must verify and its pubkey must match the one the signer reported. A remote signer only signs kinds it was granted, so widen `perms` (for example `sign_event:1`) when you create it.
 
+### Client errors
+
+`signIn.nostr`, `nostr.addPubkey`, `nostr.signEvent` and `nostr.getProfile` never throw. A failure on the client (no signer, a signer timeout, a bad event, a missing `relays` config) comes back as `{ data: null, error }` with `error.status` `400`, `error.statusText` `"BAD_REQUEST"` and an `error.code` from `NOSTR_ERROR_CODES` (`NOSTR_SIGN_IN_FAILED`, `NOSTR_ADD_PUBKEY_FAILED`, `NOSTR_SIGN_EVENT_FAILED` or `NOSTR_GET_PROFILE_FAILED`), the same shape Better Auth's passkey client uses. Both plugins declare the codes as `$ERROR_CODES`, so `keyof typeof authClient.$ERROR_CODES` includes them for error translations. To compare at runtime, import `NOSTR_ERROR_CODES` (and its `NostrErrorCode` type) from `better-auth-nostr` or `better-auth-nostr/client`. When the server rejects the request, you get its own error and HTTP status instead.
+
 ### Profile metadata
 
 Configure relays on the client and `nostr.getProfile` resolves an `npub`, `nprofile`, hex pubkey or NIP-05 identifier and returns the user's kind `0` metadata, for showing a name and avatar or prefilling a signup form:

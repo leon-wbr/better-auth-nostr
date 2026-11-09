@@ -1,4 +1,5 @@
 import type { BetterAuthPlugin } from "better-auth";
+import { NOSTR_ERROR_CODES } from "./error-codes";
 import { addPubkey, getNostrNonce, loginNostr } from "./routes";
 import type { NostrOptions } from "./types";
 
@@ -41,7 +42,9 @@ export const nostr = (options?: NostrOptions) => {
         },
       },
     },
+    $ERROR_CODES: NOSTR_ERROR_CODES,
   } satisfies BetterAuthPlugin;
 };
 
+export { NOSTR_ERROR_CODES, type NostrErrorCode } from "./error-codes";
 export type { NostrOptions };
