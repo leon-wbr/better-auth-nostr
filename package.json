@@ -16,6 +16,7 @@
     "lint": "biome check . --error-on-warnings",
     "lint:fix": "biome check . --fix --unsafe",
     "format": "biome format . --write",
+    "knip": "knip",
     "ci:local": "npm run lint && npm run typecheck && npm test && npm run build",
     "prepublishOnly": "npm run build"
   },
@@ -71,6 +72,7 @@
     "@vitest/coverage-v8": "^4.1.11",
     "better-auth": "^1.7.0",
     "better-call": "^1.4.0",
+    "knip": "^6.44.2",
     "tsdown": "^0.23.4",
     "typescript": "^7.0.2",
     "vitest": "^4.0.15"
