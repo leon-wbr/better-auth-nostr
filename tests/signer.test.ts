@@ -4,12 +4,14 @@ import {
   getPublicKey,
   nip19,
 } from "nostr-tools";
+import { BunkerSigner } from "nostr-tools/nip46";
 import { verifyEvent } from "nostr-tools/pure";
 import { bytesToHex } from "nostr-tools/utils";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertFreshlySigned,
   createBunkerSigner,
+  createExtensionSigner,
   createNostrConnectSession,
   createPrivateKeySigner,
   NIP98_MAX_CLOCK_DRIFT_SECONDS,
@@ -237,5 +239,179 @@ describe("assertFreshlySigned", () => {
 
   it("names the clock, not the approval, when the signer runs ahead", () => {
     expect(() => assertFreshlySigned(at(-120))).toThrow(/clock/i);
+  });
+});
+
+describe("createExtensionSigner", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const signed = { ...template, id: "id", pubkey: "pk", sig: "sig" };
+
+  it("returns null when there is no window", () => {
+    expect(createExtensionSigner()).toBeNull();
+  });
+
+  it("returns null when window.nostr cannot sign", () => {
+    vi.stubGlobal("window", { nostr: { getPublicKey: () => "pk" } });
+    expect(createExtensionSigner()).toBeNull();
+  });
+
+  it("delegates getPublicKey to window.nostr, sync or async", async () => {
+    vi.stubGlobal("window", {
+      nostr: { getPublicKey: () => "sync-pk", signEvent: vi.fn() },
+    });
+    expect(await createExtensionSigner()?.getPublicKey()).toBe("sync-pk");
+
+    vi.stubGlobal("window", {
+      nostr: { getPublicKey: async () => "async-pk", signEvent: vi.fn() },
+    });
+    expect(await createExtensionSigner()?.getPublicKey()).toBe("async-pk");
+  });
+
+  it("passes the event template to signEvent and returns its result", async () => {
+    const signEvent = vi.fn().mockResolvedValue(signed);
+    vi.stubGlobal("window", { nostr: { getPublicKey: vi.fn(), signEvent } });
+
+    await expect(createExtensionSigner()?.signEvent(template)).resolves.toBe(
+      signed,
+    );
+    expect(signEvent).toHaveBeenCalledExactlyOnceWith(template);
+  });
+
+  it("propagates the extension's rejections", async () => {
+    vi.stubGlobal("window", {
+      nostr: {
+        getPublicKey: vi.fn().mockRejectedValue(new Error("locked")),
+        signEvent: vi.fn().mockRejectedValue(new Error("user denied")),
+      },
+    });
+    const signer = createExtensionSigner();
+    await expect(signer?.getPublicKey()).rejects.toThrow("locked");
+    await expect(signer?.signEvent(template)).rejects.toThrow("user denied");
+  });
+
+  it("is what resolveSigner falls back to", async () => {
+    vi.stubGlobal("window", {
+      nostr: { getPublicKey: () => "ext-pk", signEvent: vi.fn() },
+    });
+    expect(await resolveSigner().getPublicKey()).toBe("ext-pk");
+  });
+});
+
+describe("signers returned by createBunkerSigner and connect()", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const signed = { ...template, id: "id", pubkey: "pk", sig: "sig" };
+
+  const fakeBunker = () => {
+    const bunker = {
+      bp: {
+        pubkey: makeKeypair().publicKey,
+        relays: ["wss://relay.example.com"],
+        secret: null as string | null,
+      },
+      sendRequest: vi.fn().mockResolvedValue("ack"),
+      getPublicKey: vi.fn().mockResolvedValue("remote-pk"),
+      signEvent: vi.fn().mockResolvedValue(signed),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.spyOn(BunkerSigner, "fromBunker").mockReturnValue(bunker as never);
+    return bunker;
+  };
+
+  const connect = (options = {}) =>
+    createBunkerSigner(bunkerUriFor(makeKeypair().publicKey), options);
+
+  it("sends connect with the default perms, then delegates to the bunker", async () => {
+    const bunker = fakeBunker();
+    const signer = await connect({ pool: stubPool() });
+
+    expect(bunker.sendRequest).toHaveBeenCalledWith("connect", [
+      expect.any(String),
+      "",
+      "sign_event:27235",
+      "{}",
+    ]);
+    expect(await signer.getPublicKey()).toBe("remote-pk");
+    expect(await signer.signEvent(template)).toBe(signed);
+    expect(bunker.signEvent).toHaveBeenCalledExactlyOnceWith(template);
+  });
+
+  it("propagates remote signing errors", async () => {
+    const bunker = fakeBunker();
+    const signer = await connect({ pool: stubPool() });
+    bunker.signEvent.mockRejectedValue(new Error("rejected by signer"));
+    bunker.getPublicKey.mockRejectedValue(new Error("offline"));
+
+    await expect(signer.signEvent(template)).rejects.toThrow(
+      "rejected by signer",
+    );
+    await expect(signer.getPublicKey()).rejects.toThrow("offline");
+  });
+
+  it("exposes the client key it was given", async () => {
+    fakeBunker();
+    const clientSecretKey = generateSecretKey();
+    const signer = await connect({ pool: stubPool(), clientSecretKey });
+    expect(signer.clientSecretKey).toBe(clientSecretKey);
+  });
+
+  it("reads bunkerUri live, so relays rewritten after the handshake show up", async () => {
+    const bunker = fakeBunker();
+    const signer = await connect({ pool: stubPool() });
+    expect(signer.bunkerUri).toContain("relay.example.com");
+
+    bunker.bp.relays = ["wss://other.example.com"];
+    expect(signer.bunkerUri).toContain("other.example.com");
+    expect(signer.bunkerUri).not.toContain("relay.example.com");
+  });
+
+  it("close() closes the bunker but leaves a caller-supplied pool open", async () => {
+    const bunker = fakeBunker();
+    const pool = stubPool();
+    const signer = await connect({ pool });
+
+    await signer.close();
+    expect(bunker.close).toHaveBeenCalledOnce();
+    expect(pool.destroyed).toBe(false);
+  });
+
+  it("close() also destroys a pool it opened itself", async () => {
+    const bunker = fakeBunker();
+    const destroy = vi
+      .spyOn((await import("nostr-tools/pool")).SimplePool.prototype, "destroy")
+      .mockImplementation(() => {});
+    const signer = await connect();
+
+    await signer.close();
+    expect(bunker.close).toHaveBeenCalledOnce();
+    expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  it("close() does not destroy the pool if closing the bunker fails", async () => {
+    const bunker = fakeBunker();
+    bunker.close.mockRejectedValue(new Error("close failed"));
+    const pool = stubPool();
+    const signer = await connect({ pool });
+
+    await expect(signer.close()).rejects.toThrow("close failed");
+    expect(pool.destroyed).toBe(false);
+  });
+
+  it("wraps the signer from a nostrconnect session the same way", async () => {
+    const bunker = fakeBunker();
+    vi.spyOn(BunkerSigner, "fromURI").mockResolvedValue(bunker as never);
+    const session = createNostrConnectSession({
+      relays: ["wss://relay.example.com"],
+      pool: stubPool(),
+    });
+
+    const signer = await session.connect(1000);
+    expect(signer.clientSecretKey).toBe(session.clientSecretKey);
+    expect(await signer.signEvent(template)).toBe(signed);
   });
 });
