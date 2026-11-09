@@ -19,6 +19,7 @@
     "knip": "knip",
     "check": "npm run lint && npm run typecheck && npm run coverage",
     "ci:local": "npm run check && npm run build",
+    "mutate": "stryker run stryker.config.ts",
     "prepublishOnly": "npm run build"
   },
   "publishConfig": {
@@ -69,6 +70,9 @@
     "@better-auth/core": "^1.7.0",
     "@better-fetch/fetch": "^1.3.1",
     "@biomejs/biome": "2.5.0",
+    "@stryker-mutator/api": "^10.1.1",
+    "@stryker-mutator/core": "^10.1.1",
+    "@stryker-mutator/vitest-runner": "^10.1.1",
     "@types/bun": "^1.3.4",
     "@vitest/coverage-v8": "^4.1.11",
     "better-auth": "^1.7.0",
