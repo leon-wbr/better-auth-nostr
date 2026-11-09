@@ -383,3 +383,163 @@ describe("client signEvent", () => {
     expect(result.error?.message).toMatch(/invalid/i);
   });
 });
+
+describe("client error paths", () => {
+  const nsecFor = (keypair: { secretKey: Uint8Array }) =>
+    nip19.nsecEncode(keypair.secretKey);
+  const noBaseUrlMessage =
+    "nostrClient: cannot determine absolute URL — set baseURL on the client";
+
+  it("reports a missing baseURL outside a browser instead of signing against a bad URL", async () => {
+    const { $store, notified } = createTestStore();
+    const actions = getNostrActions(
+      createTestFetch(createTestAuth()),
+      { $store },
+      {} as any,
+    );
+
+    const result = await actions.signIn.nostr({
+      nsec: nsecFor(makeKeypair()),
+    });
+
+    expect(result.data).toBeNull();
+    expect(result.error).toMatchObject({
+      code: "NOSTR_SIGN_IN_FAILED",
+      message: noBaseUrlMessage,
+    });
+    expect(notified).toHaveLength(0);
+  });
+
+  it("reports the missing baseURL from addPubkey too", async () => {
+    const { $store } = createTestStore();
+    const actions = getNostrActions(
+      createTestFetch(createTestAuth()),
+      { $store },
+      {} as any,
+    );
+
+    const result = await actions.nostr.addPubkey({
+      nsec: nsecFor(makeKeypair()),
+    });
+
+    expect(result.data).toBeNull();
+    expect(result.error).toMatchObject({
+      code: "NOSTR_ADD_PUBKEY_FAILED",
+      message: noBaseUrlMessage,
+    });
+  });
+
+  describe("when the nonce request fails", () => {
+    const actionsWithNonceResponse = (response: unknown) => {
+      const { $store } = createTestStore();
+      const calls: string[] = [];
+      const $fetch = (async (path: string) => {
+        calls.push(path);
+        return response;
+      }) as any;
+      const actions = getNostrActions($fetch, { $store }, {
+        baseURL: TEST_ORIGIN,
+      } as any);
+      return { actions, calls };
+    };
+
+    it("surfaces the server's error message and stops before login", async () => {
+      const { actions, calls } = actionsWithNonceResponse({
+        data: null,
+        error: { message: "Too many requests", status: 429 },
+      });
+
+      const result = await actions.signIn.nostr({
+        nsec: nsecFor(makeKeypair()),
+      });
+
+      expect(result.data).toBeNull();
+      expect(result.error).toMatchObject({
+        code: "NOSTR_SIGN_IN_FAILED",
+        message: "Too many requests",
+      });
+      expect(calls).toEqual(["/nostr/nonce"]);
+    });
+
+    it("falls back to a generic message when the error has none", async () => {
+      const { actions } = actionsWithNonceResponse({ data: null, error: {} });
+
+      const result = await actions.nostr.addPubkey({
+        nsec: nsecFor(makeKeypair()),
+      });
+
+      expect(result.data).toBeNull();
+      expect(result.error).toMatchObject({
+        code: "NOSTR_ADD_PUBKEY_FAILED",
+        message: "Failed to fetch nonce",
+      });
+    });
+
+    it("treats a response without a nonce as a failure", async () => {
+      const { actions } = actionsWithNonceResponse({ data: {}, error: null });
+
+      const result = await actions.signIn.nostr({
+        nsec: nsecFor(makeKeypair()),
+      });
+
+      expect(result.data).toBeNull();
+      expect(result.error?.message).toBe("Failed to fetch nonce");
+    });
+  });
+
+  describe("when the signer signs with a different key than it reported", () => {
+    const switchedSigner = () => {
+      const reported = makeKeypair();
+      const actual = makeKeypair();
+      return {
+        getPublicKey: async () => reported.publicKey,
+        signEvent: async (event: EventTemplate) =>
+          finalizeEvent(event, actual.secretKey),
+      };
+    };
+    const message =
+      "The signer signed with a different key than it reported — sign in again";
+
+    it("fails sign-in before anything is sent to the login endpoint", async () => {
+      const { $store, notified } = createTestStore();
+      const realFetch = createTestFetch(createTestAuth());
+      const calls: string[] = [];
+      const $fetch = (async (path: string, init?: any) => {
+        calls.push(path);
+        return (realFetch as any)(path, init);
+      }) as any;
+      const actions = getNostrActions($fetch, { $store }, {
+        baseURL: TEST_ORIGIN,
+      } as any);
+
+      const result = await actions.signIn.nostr({ signer: switchedSigner() });
+
+      expect(result.data).toBeNull();
+      expect(result.error).toMatchObject({
+        code: "NOSTR_SIGN_IN_FAILED",
+        message,
+      });
+      expect(calls).toEqual(["/nostr/nonce"]);
+      expect(notified).toHaveLength(0);
+    });
+
+    it("fails addPubkey the same way", async () => {
+      const { $store } = createTestStore();
+      const actions = getNostrActions(
+        createTestFetch(createTestAuth()),
+        { $store },
+        { baseURL: TEST_ORIGIN } as any,
+      );
+
+      const result = await actions.nostr.addPubkey({
+        signer: switchedSigner(),
+      });
+
+      expect(result.data).toBeNull();
+      expect(result.error).toMatchObject({
+        code: "NOSTR_ADD_PUBKEY_FAILED",
+        message,
+      });
+    });
+  });
+});
