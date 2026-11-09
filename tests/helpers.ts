@@ -19,11 +19,15 @@ export const createTestAuth = (
   options?: NostrOptions,
   {
     user,
+    databaseHooks,
     db = createMemoryDb(options?.modelName ?? "nostrPubkey"),
-  }: Pick<BetterAuthOptions, "user"> & { db?: MemoryDB } = {},
+  }: Pick<BetterAuthOptions, "user" | "databaseHooks"> & {
+    db?: MemoryDB;
+  } = {},
 ) => {
   return betterAuth({
     user,
+    databaseHooks,
     baseURL: TEST_ORIGIN,
     secret: "test-secret-do-not-use-in-production",
     database: memoryAdapter(db),

@@ -164,6 +164,27 @@ const userInfoFromProfile = async (
   }
 };
 
+/**
+ * Runs a storage call and turns a thrown error into a generic 500. The detail
+ * goes to the server log only, never into the response body.
+ */
+const guardStorage = async <T>(
+  ctx: {
+    context: {
+      logger: { error: (message: string, ...args: unknown[]) => void };
+    };
+  },
+  message: string,
+  run: () => Promise<T>,
+): Promise<T> => {
+  try {
+    return await run();
+  } catch (error) {
+    ctx.context.logger.error(message, error);
+    throw new APIError("INTERNAL_SERVER_ERROR", { message });
+  }
+};
+
 export const getNostrNonce = (opts?: NostrOptions) =>
   createAuthEndpoint(
     "/nostr/nonce",
@@ -307,9 +328,12 @@ export const loginNostr = (opts?: NostrOptions) =>
         }
       }
 
-      const session = await ctx.context.internalAdapter.createSession(
-        nostrPubkey.userId,
+      const userId = nostrPubkey.userId;
+      const session = await guardStorage(ctx, "Failed to create session", () =>
+        ctx.context.internalAdapter.createSession(userId),
       );
+      // A null session can be a deliberate before-hook denial, so it stays a
+      // vague 401 rather than becoming a 500.
       if (!session) {
         throw new APIError("UNAUTHORIZED", {
           message: "Failed to create session",
@@ -365,15 +389,25 @@ export const addPubkey = (_opts?: NostrOptions) =>
         return ctx.json({ pubkey: existing }, { status: 200 });
       }
 
-      const pubkey = await ctx.context.adapter.create<NostrPubkey>({
-        model: MODEL,
-        data: {
-          publicKey: signer,
-          userId: session.user.id,
-          name: ctx.body.name,
-          createdAt: new Date(),
-        },
-      });
+      const pubkey = await guardStorage(
+        ctx,
+        "Failed to create Nostr pubkey",
+        () =>
+          ctx.context.adapter.create<NostrPubkey>({
+            model: MODEL,
+            data: {
+              publicKey: signer,
+              userId: session.user.id,
+              name: ctx.body.name,
+              createdAt: new Date(),
+            },
+          }),
+      );
+      if (!pubkey) {
+        throw new APIError("INTERNAL_SERVER_ERROR", {
+          message: "Failed to create Nostr pubkey",
+        });
+      }
 
       return ctx.json({ pubkey }, { status: 200 });
     },

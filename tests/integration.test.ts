@@ -1,5 +1,5 @@
 import type { MemoryDB } from "better-auth/adapters/memory";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   cookiesFromResponse,
   createTestAuth,
@@ -289,6 +289,38 @@ describe("renamed model and fields", () => {
   });
 });
 
+describe("storage failures", () => {
+  it("answers 401 when a session before-hook denies the login", async () => {
+    const auth = createTestAuth(undefined, {
+      databaseHooks: { session: { create: { before: async () => false } } },
+    });
+
+    const res = await performLogin(auth, makeKeypair());
+
+    expect(res.status).toBe(401);
+    expect(await res.json()).toMatchObject({
+      message: "Failed to create session",
+    });
+  });
+
+  it("answers 500 with a generic message when createSession throws", async () => {
+    const auth = createTestAuth();
+    const { internalAdapter } = await auth.$context;
+    vi.spyOn(internalAdapter, "createSession").mockRejectedValue(
+      new Error('relation "session" does not exist'),
+    );
+
+    const res = await performLogin(auth, makeKeypair());
+
+    expect(res.status).toBe(500);
+    const text = await res.text();
+    expect(JSON.parse(text)).toMatchObject({
+      message: "Failed to create session",
+    });
+    expect(text).not.toContain("relation");
+  });
+});
+
 describe("POST /nostr/add-pubkey", () => {
   const linkPubkey = async (
     auth: ReturnType<typeof createTestAuth>,
@@ -413,5 +445,50 @@ describe("POST /nostr/add-pubkey", () => {
 
     const result = await linkPubkey(auth, sessionHeaders, keypair);
     expect(result.pubkey.publicKey).toBe(keypair.publicKey);
+  });
+
+  it("reports a failed pubkey insert as 500", async () => {
+    const auth = createTestAuth();
+    const sessionHeaders = cookiesFromResponse(
+      await performLogin(auth, makeKeypair()),
+    );
+    const { adapter } = await auth.$context;
+    const create = adapter.create.bind(adapter);
+    vi.spyOn(adapter, "create").mockImplementation((args) =>
+      args.model === "nostrPubkey"
+        ? Promise.resolve(null as never)
+        : create(args),
+    );
+
+    await expect(
+      linkPubkey(auth, sessionHeaders, makeKeypair()),
+    ).rejects.toMatchObject({
+      statusCode: 500,
+      body: { message: "Failed to create Nostr pubkey" },
+    });
+  });
+
+  it("answers 500 without database detail when the pubkey insert throws", async () => {
+    const auth = createTestAuth();
+    const sessionHeaders = cookiesFromResponse(
+      await performLogin(auth, makeKeypair()),
+    );
+    const { adapter } = await auth.$context;
+    const create = adapter.create.bind(adapter);
+    vi.spyOn(adapter, "create").mockImplementation((args) =>
+      args.model === "nostrPubkey"
+        ? Promise.reject(new Error("connection to 10.0.0.5 refused"))
+        : create(args),
+    );
+
+    const failure = await linkPubkey(auth, sessionHeaders, makeKeypair()).catch(
+      (error) => error,
+    );
+
+    expect(failure).toMatchObject({
+      statusCode: 500,
+      body: { message: "Failed to create Nostr pubkey" },
+    });
+    expect(JSON.stringify(failure.body)).not.toContain("10.0.0.5");
   });
 });
