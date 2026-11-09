@@ -9,6 +9,12 @@ import { verifyEvent } from "nostr-tools";
 import { getToken } from "nostr-tools/nip98";
 import type { nostr } from ".";
 import {
+  DEFAULT_BASE_PATH,
+  endpointURL,
+  NOSTR_PATHS,
+  type NostrPath,
+} from "./endpoints";
+import {
   DEFAULT_RELAY_TIMEOUT_MS,
   fetchProfile,
   type NostrProfile,
@@ -51,9 +57,9 @@ type AddPubkeyOptions = SignerSource & {
  * validates against, which is `baseURL + basePath`. Deriving it from the
  * window origin alone drops the base path and every signature fails.
  */
-const getEndpointUrl = (
+const clientEndpointURL = (
   options: BetterAuthClientOptions | undefined,
-  path: string,
+  path: NostrPath,
 ) => {
   const baseURL =
     options?.baseURL ||
@@ -63,9 +69,9 @@ const getEndpointUrl = (
       "nostrClient: cannot determine absolute URL — set baseURL on the client",
     );
   }
-  const basePath = options?.basePath || "/api/auth";
-  const trimmed = baseURL.endsWith("/") ? baseURL.slice(0, -1) : baseURL;
-  return `${trimmed}${basePath}${path}`;
+  // Same composition as the server's `ctx.context.baseURL`.
+  const base = endpointURL(baseURL, options?.basePath || DEFAULT_BASE_PATH);
+  return endpointURL(base, path);
 };
 
 export const getNostrActions = (
@@ -75,7 +81,7 @@ export const getNostrActions = (
   relayOptions: RelayOptions = {},
 ) => {
   const fetchNonce = async (publicKey: string): Promise<string> => {
-    const { data, error } = await $fetch<{ nonce: string }>("/nostr/nonce", {
+    const { data, error } = await $fetch<{ nonce: string }>(NOSTR_PATHS.nonce, {
       method: "POST",
       body: { publicKey },
     });
@@ -115,12 +121,12 @@ export const getNostrActions = (
     );
 
   /** Fetch a nonce for the signer's key and mint a NIP-98 token against it. */
-  const authorize = async (path: string, source?: SignerSource) => {
+  const authorize = async (path: NostrPath, source?: SignerSource) => {
     const signer = resolveSigner(source);
     const publicKey = await signer.getPublicKey();
     const nonce = await fetchNonce(publicKey);
     const token = await mintToken(
-      getEndpointUrl(options, path),
+      clientEndpointURL(options, path),
       signer,
       publicKey,
       { nonce },
@@ -134,12 +140,15 @@ export const getNostrActions = (
     fetchOptions?: BetterFetchOption,
   ) => {
     try {
-      const { nonce, token } = await authorize("/nostr/login", signInOptions);
+      const { nonce, token } = await authorize(
+        NOSTR_PATHS.login,
+        signInOptions,
+      );
 
       const response = await $fetch<{
         session: { id: string; userId: string; expiresAt: Date };
         user: { id: string; email: string; name: string };
-      }>("/nostr/login", {
+      }>(NOSTR_PATHS.login, {
         method: "POST",
         headers: { authorization: token },
         body: { nonce },
@@ -164,9 +173,12 @@ export const getNostrActions = (
     fetchOptions?: BetterFetchOption,
   ) => {
     try {
-      const { nonce, token } = await authorize("/nostr/add-pubkey", addOptions);
+      const { nonce, token } = await authorize(
+        NOSTR_PATHS.addPubkey,
+        addOptions,
+      );
 
-      return await $fetch<{ pubkey: NostrPubkey }>("/nostr/add-pubkey", {
+      return await $fetch<{ pubkey: NostrPubkey }>(NOSTR_PATHS.addPubkey, {
         method: "POST",
         headers: { authorization: token },
         body: { nonce, name: addOptions?.name },
@@ -298,9 +310,9 @@ export const nostrClient = <O extends RelayOptions = RelayOptions>(
     getActions: ($fetch, $store, options): NostrClientActions<O> =>
       getNostrActions($fetch, { $store }, options, relayOptions),
     pathMethods: {
-      "/nostr/nonce": "POST",
-      "/nostr/login": "POST",
-      "/nostr/add-pubkey": "POST",
+      [NOSTR_PATHS.nonce]: "POST",
+      [NOSTR_PATHS.login]: "POST",
+      [NOSTR_PATHS.addPubkey]: "POST",
     },
   } satisfies BetterAuthClientPlugin;
 };

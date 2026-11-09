@@ -10,6 +10,7 @@ import { parseAdditionalUserInputFromProviderProfile } from "better-auth/db";
 import { nip19 } from "nostr-tools";
 import { unpackEventFromToken, validateEvent } from "nostr-tools/nip98";
 import * as z from "zod";
+import { endpointURL, NOSTR_PATHS } from "./endpoints";
 import { fetchProfile, type NostrProfile } from "./profile";
 import type { NostrMappedUser, NostrOptions, NostrPubkey } from "./types";
 
@@ -49,11 +50,6 @@ const consumeNonce = async (
   }
 };
 
-const buildEndpointUrl = (baseURL: string, path: string) => {
-  const trimmed = baseURL.endsWith("/") ? baseURL.slice(0, -1) : baseURL;
-  return `${trimmed}${path.startsWith("/") ? path : `/${path}`}`;
-};
-
 /**
  * Runs every check a NIP-98 request has to pass before it is trusted: a
  * token in the Authorization header, a nonce in the body, a valid event
@@ -62,7 +58,7 @@ const buildEndpointUrl = (baseURL: string, path: string) => {
  */
 const verifyNip98Request = async (
   ctx: GenericEndpointContext & { body: { nonce: string } },
-  path: "/nostr/login" | "/nostr/add-pubkey",
+  path: typeof NOSTR_PATHS.login | typeof NOSTR_PATHS.addPubkey,
 ): Promise<string> => {
   const token = ctx.headers?.get("authorization");
   if (!token) {
@@ -82,7 +78,7 @@ const verifyNip98Request = async (
     });
   });
 
-  const url = buildEndpointUrl(ctx.context.baseURL, path);
+  const url = endpointURL(ctx.context.baseURL, path);
   await validateEvent(event, url, "post", { nonce }).catch((error: unknown) => {
     throw new APIError("UNAUTHORIZED", {
       message:
@@ -187,7 +183,7 @@ const guardStorage = async <T>(
 
 export const getNostrNonce = (opts?: NostrOptions) =>
   createAuthEndpoint(
-    "/nostr/nonce",
+    NOSTR_PATHS.nonce,
     {
       method: "POST",
       body: z.object({
@@ -238,7 +234,7 @@ export const getNostrNonce = (opts?: NostrOptions) =>
 
 export const loginNostr = (opts?: NostrOptions) =>
   createAuthEndpoint(
-    "/nostr/login",
+    NOSTR_PATHS.login,
     {
       method: "POST",
       body: z.object({
@@ -257,7 +253,7 @@ export const loginNostr = (opts?: NostrOptions) =>
       },
     },
     async (ctx) => {
-      const pubkey = await verifyNip98Request(ctx, "/nostr/login");
+      const pubkey = await verifyNip98Request(ctx, NOSTR_PATHS.login);
 
       let nostrPubkey = await findPubkeyRow(ctx, pubkey);
 
@@ -347,7 +343,7 @@ export const loginNostr = (opts?: NostrOptions) =>
 
 export const addPubkey = (_opts?: NostrOptions) =>
   createAuthEndpoint(
-    "/nostr/add-pubkey",
+    NOSTR_PATHS.addPubkey,
     {
       method: "POST",
       use: [sessionMiddleware],
@@ -376,7 +372,7 @@ export const addPubkey = (_opts?: NostrOptions) =>
         throw new APIError("UNAUTHORIZED", { message: "Not signed in" });
       }
 
-      const signer = await verifyNip98Request(ctx, "/nostr/add-pubkey");
+      const signer = await verifyNip98Request(ctx, NOSTR_PATHS.addPubkey);
 
       const existing = await findPubkeyRow(ctx, signer);
 
