@@ -17,6 +17,7 @@ import {
 import { SimplePool } from "nostr-tools/pool";
 import { PlainKeySigner, type Signer } from "nostr-tools/signer";
 import { bytesToHex, hexToBytes } from "nostr-tools/utils";
+import { NOSTR_ERROR_CODES, NostrClientError } from "./error-codes";
 
 /**
  * Anything that can hand out a public key and sign an event: a local secret
@@ -80,14 +81,23 @@ type WindowNostr = {
 export const withTimeout = async <T>(
   work: Promise<T>,
   ms: number,
-  message: string,
+  message?: string,
 ): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       work,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(message)), ms);
+        timer = setTimeout(
+          () =>
+            reject(
+              new NostrClientError(
+                NOSTR_ERROR_CODES.NOSTR_SIGNER_TIMEOUT,
+                message,
+              ),
+            ),
+          ms,
+        );
       }),
     ]);
   } finally {
@@ -157,9 +167,7 @@ export const resolveSigner = (source?: SignerSource): NostrSigner => {
   if (source?.nsec) return createPrivateKeySigner(source.nsec);
   const extension = createExtensionSigner();
   if (extension) return extension;
-  throw new Error(
-    "No signer available — pass `signer`, pass `nsec`, or install a NIP-07 extension",
-  );
+  throw new NostrClientError(NOSTR_ERROR_CODES.NOSTR_NO_SIGNER);
 };
 
 type RemoteTransportOptions = {
@@ -368,9 +376,13 @@ export const assertFreshlySigned = (event: NostrEvent): NostrEvent => {
   const limit = NIP98_MAX_CLOCK_DRIFT_SECONDS - CLIENT_FRESHNESS_MARGIN_SECONDS;
   if (Math.abs(driftSeconds) < limit) return event;
 
-  throw new Error(
-    driftSeconds > 0
-      ? `The signer took too long to approve the request (signed event is ${driftSeconds}s old, the server accepts ${NIP98_MAX_CLOCK_DRIFT_SECONDS}s). Try again.`
-      : `The signer's clock is ${Math.abs(driftSeconds)}s ahead of this device, so the server will reject its signature. Check the clock on your signing device.`,
-  );
+  throw driftSeconds > 0
+    ? new NostrClientError(
+        NOSTR_ERROR_CODES.NOSTR_SIGNER_TOO_SLOW,
+        `The signer took too long to approve the request (signed event is ${driftSeconds}s old, the server accepts ${NIP98_MAX_CLOCK_DRIFT_SECONDS}s). Try again.`,
+      )
+    : new NostrClientError(
+        NOSTR_ERROR_CODES.NOSTR_SIGNER_CLOCK_SKEW,
+        `The signer's clock is ${Math.abs(driftSeconds)}s ahead of this device, so the server will reject its signature. Check the clock on your signing device.`,
+      );
 };

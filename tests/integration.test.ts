@@ -105,7 +105,7 @@ describe("POST /nostr/login", () => {
         body: { nonce },
         headers: new Headers({ authorization: token }),
       }),
-    ).rejects.toThrow(/Invalid or expired nonce/);
+    ).rejects.toMatchObject({ body: { code: "NOSTR_INVALID_NONCE" } });
   });
 
   const loginWith = (
@@ -176,7 +176,7 @@ describe("POST /nostr/login", () => {
           authorization: await signLoginToken(bob, nonce),
         }),
       }),
-    ).rejects.toThrow(/Invalid or expired nonce/);
+    ).rejects.toMatchObject({ body: { code: "NOSTR_INVALID_NONCE" } });
   });
 
   it("rejects a nonce the server never issued", async () => {
@@ -191,7 +191,7 @@ describe("POST /nostr/login", () => {
         body: { nonce: "bogus-nonce" },
         headers: new Headers({ authorization: token }),
       }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ body: { code: "NOSTR_INVALID_NONCE" } });
   });
 
   it("rejects an unknown pubkey when disableImplicitSignUp is set", async () => {
@@ -206,7 +206,10 @@ describe("POST /nostr/login", () => {
         body: { nonce },
         headers: new Headers({ authorization: token }),
       }),
-    ).rejects.toThrow(/not registered/);
+    ).rejects.toMatchObject({
+      statusCode: 401,
+      body: { code: "NOSTR_PUBKEY_NOT_REGISTERED" },
+    });
   });
 
   it("rejects a request with no Authorization header", async () => {
@@ -216,7 +219,7 @@ describe("POST /nostr/login", () => {
 
     await expect(
       auth.api.loginNostr({ body: { nonce }, headers: new Headers() }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ body: { code: "NOSTR_MISSING_TOKEN" } });
   });
 
   it("honors a custom generateEmail()", async () => {
@@ -299,7 +302,7 @@ describe("storage failures", () => {
 
     expect(res.status).toBe(401);
     expect(await res.json()).toMatchObject({
-      message: "Failed to create session",
+      code: "FAILED_TO_CREATE_SESSION",
     });
   });
 
@@ -315,9 +318,55 @@ describe("storage failures", () => {
     expect(res.status).toBe(500);
     const text = await res.text();
     expect(JSON.parse(text)).toMatchObject({
-      message: "Failed to create session",
+      code: "FAILED_TO_CREATE_SESSION",
     });
     expect(text).not.toContain("relation");
+  });
+
+  it.each([
+    ["createUser", "returns null", null, "FAILED_TO_CREATE_USER"],
+    [
+      "createUser",
+      "throws",
+      new Error("db at 10.0.0.5"),
+      "FAILED_TO_CREATE_USER",
+    ],
+    [
+      "the pubkey insert",
+      "returns null",
+      null,
+      "NOSTR_FAILED_TO_CREATE_PUBKEY",
+    ],
+    [
+      "the pubkey insert",
+      "throws",
+      new Error("db at 10.0.0.5"),
+      "NOSTR_FAILED_TO_CREATE_PUBKEY",
+    ],
+  ])("answers 500 when sign-up's %s %s", async (call, _, result, code) => {
+    const auth = createTestAuth();
+    const { adapter, internalAdapter } = await auth.$context;
+    const settle = () =>
+      result ? Promise.reject(result) : Promise.resolve(null as never);
+    if (call === "createUser") {
+      vi.spyOn(internalAdapter, "createUser").mockImplementation(settle);
+    } else {
+      const create = adapter.create.bind(adapter);
+      vi.spyOn(adapter, "create").mockImplementation((args) =>
+        args.model === "nostrPubkey" ? settle() : create(args),
+      );
+      // Sign-up writes through the transaction's adapter; hand it the spy.
+      vi.spyOn(adapter, "transaction").mockImplementation((run) =>
+        run(adapter),
+      );
+    }
+
+    const res = await performLogin(auth, makeKeypair());
+
+    expect(res.status).toBe(500);
+    const text = await res.text();
+    expect(JSON.parse(text)).toMatchObject({ code });
+    expect(text).not.toContain("10.0.0.5");
   });
 });
 
@@ -381,7 +430,9 @@ describe("POST /nostr/add-pubkey", () => {
 
     await expect(
       auth.api.addPubkey({ body: { nonce }, headers }),
-    ).rejects.toThrow(/Invalid or expired nonce/);
+    ).rejects.toMatchObject({
+      body: { code: "NOSTR_INVALID_NONCE" },
+    });
   });
 
   it("keeps an earlier add-pubkey nonce valid after a later nonce request", async () => {
@@ -418,7 +469,9 @@ describe("POST /nostr/add-pubkey", () => {
 
     await expect(
       auth.api.addPubkey({ body: { nonce }, headers }),
-    ).rejects.toThrow(/Invalid or expired nonce/);
+    ).rejects.toMatchObject({
+      body: { code: "NOSTR_INVALID_NONCE" },
+    });
   });
 
   it("returns 409 when the pubkey already belongs to a different user", async () => {
@@ -431,8 +484,11 @@ describe("POST /nostr/add-pubkey", () => {
     const loginB = await performLogin(auth, userB);
     const sessionHeaders = cookiesFromResponse(loginB);
 
-    await expect(linkPubkey(auth, sessionHeaders, userA)).rejects.toThrow(
-      /already linked/,
+    await expect(linkPubkey(auth, sessionHeaders, userA)).rejects.toMatchObject(
+      {
+        statusCode: 409,
+        body: { code: "NOSTR_PUBKEY_LINKED_TO_OTHER_USER" },
+      },
     );
   });
 
@@ -464,7 +520,7 @@ describe("POST /nostr/add-pubkey", () => {
       linkPubkey(auth, sessionHeaders, makeKeypair()),
     ).rejects.toMatchObject({
       statusCode: 500,
-      body: { message: "Failed to create Nostr pubkey" },
+      body: { code: "NOSTR_FAILED_TO_CREATE_PUBKEY" },
     });
   });
 
@@ -487,7 +543,7 @@ describe("POST /nostr/add-pubkey", () => {
 
     expect(failure).toMatchObject({
       statusCode: 500,
-      body: { message: "Failed to create Nostr pubkey" },
+      body: { code: "NOSTR_FAILED_TO_CREATE_PUBKEY" },
     });
     expect(JSON.stringify(failure.body)).not.toContain("10.0.0.5");
   });

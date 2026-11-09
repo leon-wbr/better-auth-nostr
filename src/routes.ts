@@ -3,7 +3,13 @@ import {
   getCurrentAdapter,
   runWithTransaction,
 } from "@better-auth/core/context";
-import type { GenericEndpointContext, User } from "better-auth";
+import {
+  BASE_ERROR_CODES,
+  BetterAuthError,
+  type GenericEndpointContext,
+  type RawError,
+  type User,
+} from "better-auth";
 import {
   APIError,
   createAuthEndpoint,
@@ -12,9 +18,14 @@ import {
 import { setSessionCookie } from "better-auth/cookies";
 import { parseAdditionalUserInputFromProviderProfile } from "better-auth/db";
 import { nip19 } from "nostr-tools";
-import { unpackEventFromToken, validateEvent } from "nostr-tools/nip98";
+import {
+  unpackEventFromToken,
+  validateEvent,
+  validateEventTimestamp,
+} from "nostr-tools/nip98";
 import * as z from "zod";
 import { endpointURL, NOSTR_PATHS } from "./endpoints";
+import { NOSTR_ERROR_CODES } from "./error-codes";
 import { fetchProfile, type NostrProfile } from "./profile";
 import type { NostrMappedUser, NostrOptions, NostrPubkey } from "./types";
 
@@ -48,9 +59,7 @@ const consumeNonce = async (
       verificationKey(nonce),
     );
   if (!verification || verification.value !== pubkey.toLowerCase()) {
-    throw new APIError("UNAUTHORIZED", {
-      message: "Invalid or expired nonce",
-    });
+    throw APIError.from("UNAUTHORIZED", NOSTR_ERROR_CODES.NOSTR_INVALID_NONCE);
   }
 };
 
@@ -66,28 +75,26 @@ const verifyNip98Request = async (
 ): Promise<string> => {
   const token = ctx.headers?.get("authorization");
   if (!token) {
-    throw new APIError("BAD_REQUEST", {
-      message: "Missing NIP-98 authorization token",
-    });
+    throw APIError.from("BAD_REQUEST", NOSTR_ERROR_CODES.NOSTR_MISSING_TOKEN);
   }
 
   const nonce = ctx.body.nonce.trim();
   if (!nonce) {
-    throw new APIError("BAD_REQUEST", { message: "Missing nonce" });
+    throw APIError.from("BAD_REQUEST", NOSTR_ERROR_CODES.NOSTR_INVALID_NONCE);
   }
 
-  const event = await unpackEventFromToken(token).catch((error: unknown) => {
-    throw new APIError("BAD_REQUEST", {
-      message: (error instanceof Error && error.message) || "Invalid token",
-    });
+  const event = await unpackEventFromToken(token).catch(() => {
+    throw APIError.from("BAD_REQUEST", NOSTR_ERROR_CODES.NOSTR_INVALID_TOKEN);
   });
 
   const url = endpointURL(ctx.context.baseURL, path);
-  await validateEvent(event, url, "post", { nonce }).catch((error: unknown) => {
-    throw new APIError("UNAUTHORIZED", {
-      message:
-        (error instanceof Error && error.message) || "Invalid NIP-98 event",
-    });
+  await validateEvent(event, url, "post", { nonce }).catch(() => {
+    throw APIError.from(
+      "UNAUTHORIZED",
+      validateEventTimestamp(event)
+        ? NOSTR_ERROR_CODES.NOSTR_INVALID_EVENT
+        : NOSTR_ERROR_CODES.NOSTR_EVENT_EXPIRED,
+    );
   });
 
   await consumeNonce(ctx, nonce, event.pubkey);
@@ -174,14 +181,14 @@ const guardStorage = async <T>(
       logger: { error: (message: string, ...args: unknown[]) => void };
     };
   },
-  message: string,
+  error: RawError,
   run: () => Promise<T>,
 ): Promise<T> => {
   try {
     return await run();
-  } catch (error) {
-    ctx.context.logger.error(message, error);
-    throw new APIError("INTERNAL_SERVER_ERROR", { message });
+  } catch (cause) {
+    ctx.context.logger.error(error.message, cause);
+    throw APIError.from("INTERNAL_SERVER_ERROR", error);
   }
 };
 
@@ -204,25 +211,37 @@ const signUp = async (
 
   try {
     return await runWithTransaction(ctx.context.adapter, async () => {
-      const user = await ctx.context.internalAdapter.createUser(
-        { ...userInfo, name: userInfo?.name || npub, email },
-        { method: "nostr" },
+      const user = await guardStorage(
+        ctx,
+        BASE_ERROR_CODES.FAILED_TO_CREATE_USER,
+        () =>
+          ctx.context.internalAdapter.createUser(
+            { ...userInfo, name: userInfo?.name || npub, email },
+            { method: "nostr" },
+          ),
       );
       if (!user) {
-        throw new APIError("INTERNAL_SERVER_ERROR", {
-          message: "Failed to create user",
-        });
+        throw APIError.from(
+          "INTERNAL_SERVER_ERROR",
+          BASE_ERROR_CODES.FAILED_TO_CREATE_USER,
+        );
       }
 
       const adapter = await getCurrentAdapter(ctx.context.adapter);
-      const nostrPubkey = await adapter.create<NostrPubkey>({
-        model: MODEL,
-        data: { publicKey: pubkey, userId: user.id, createdAt: new Date() },
-      });
+      const nostrPubkey = await guardStorage(
+        ctx,
+        NOSTR_ERROR_CODES.NOSTR_FAILED_TO_CREATE_PUBKEY,
+        () =>
+          adapter.create<NostrPubkey>({
+            model: MODEL,
+            data: { publicKey: pubkey, userId: user.id, createdAt: new Date() },
+          }),
+      );
       if (!nostrPubkey) {
-        throw new APIError("INTERNAL_SERVER_ERROR", {
-          message: "Failed to create Nostr pubkey",
-        });
+        throw APIError.from(
+          "INTERNAL_SERVER_ERROR",
+          NOSTR_ERROR_CODES.NOSTR_FAILED_TO_CREATE_PUBKEY,
+        );
       }
       return { user, nostrPubkey };
     });
@@ -272,9 +291,9 @@ export const getNostrNonce = (opts?: NostrOptions) =>
       const ttlMs = opts?.nonceTtlMs ?? DEFAULT_NONCE_TTL;
       const nonce = (await opts?.getNonce?.()) ?? createDefaultNonce();
       if (!NONCE_REGEX.test(nonce)) {
-        throw new APIError("INTERNAL_SERVER_ERROR", {
-          message: "getNonce() must return 8-249 characters from [A-Za-z0-9_-]",
-        });
+        throw new BetterAuthError(
+          "getNonce() must return 8-249 characters from [A-Za-z0-9_-]",
+        );
       }
 
       await ctx.context.internalAdapter.createVerificationValue({
@@ -316,9 +335,10 @@ export const loginNostr = (opts?: NostrOptions) =>
 
       if (!nostrPubkey) {
         if (opts?.disableImplicitSignUp) {
-          throw new APIError("UNAUTHORIZED", {
-            message: "Nostr pubkey not registered",
-          });
+          throw APIError.from(
+            "UNAUTHORIZED",
+            NOSTR_ERROR_CODES.NOSTR_PUBKEY_NOT_REGISTERED,
+          );
         }
 
         ({ user, nostrPubkey } = await signUp(ctx, opts, pubkey));
@@ -327,7 +347,7 @@ export const loginNostr = (opts?: NostrOptions) =>
           nostrPubkey.userId,
         );
         if (!user) {
-          throw new APIError("UNAUTHORIZED", { message: "User not found" });
+          throw APIError.from("UNAUTHORIZED", BASE_ERROR_CODES.USER_NOT_FOUND);
         }
 
         if (opts?.overrideUserInfoOnSignIn) {
@@ -348,15 +368,18 @@ export const loginNostr = (opts?: NostrOptions) =>
       }
 
       const userId = nostrPubkey.userId;
-      const session = await guardStorage(ctx, "Failed to create session", () =>
-        ctx.context.internalAdapter.createSession(userId),
+      const session = await guardStorage(
+        ctx,
+        BASE_ERROR_CODES.FAILED_TO_CREATE_SESSION,
+        () => ctx.context.internalAdapter.createSession(userId),
       );
       // A null session can be a deliberate before-hook denial, so it stays a
       // vague 401 rather than becoming a 500.
       if (!session) {
-        throw new APIError("UNAUTHORIZED", {
-          message: "Failed to create session",
-        });
+        throw APIError.from(
+          "UNAUTHORIZED",
+          BASE_ERROR_CODES.FAILED_TO_CREATE_SESSION,
+        );
       }
 
       await setSessionCookie(ctx, { session, user });
@@ -390,19 +413,16 @@ export const addPubkey = (_opts?: NostrOptions) =>
       },
     },
     async (ctx) => {
-      const session = ctx.context.session;
-      if (!session) {
-        throw new APIError("UNAUTHORIZED", { message: "Not signed in" });
-      }
-
+      const { session } = ctx.context;
       const signer = await verifyNip98Request(ctx, NOSTR_PATHS.addPubkey);
 
       const existing = await findPubkeyRow(ctx, signer);
 
       if (existing && existing.userId !== session.user.id) {
-        throw new APIError("CONFLICT", {
-          message: "Pubkey is already linked to another account",
-        });
+        throw APIError.from(
+          "CONFLICT",
+          NOSTR_ERROR_CODES.NOSTR_PUBKEY_LINKED_TO_OTHER_USER,
+        );
       }
       if (existing) {
         return ctx.json({ pubkey: existing }, { status: 200 });
@@ -410,7 +430,7 @@ export const addPubkey = (_opts?: NostrOptions) =>
 
       const pubkey = await guardStorage(
         ctx,
-        "Failed to create Nostr pubkey",
+        NOSTR_ERROR_CODES.NOSTR_FAILED_TO_CREATE_PUBKEY,
         () =>
           ctx.context.adapter.create<NostrPubkey>({
             model: MODEL,
@@ -423,9 +443,10 @@ export const addPubkey = (_opts?: NostrOptions) =>
           }),
       );
       if (!pubkey) {
-        throw new APIError("INTERNAL_SERVER_ERROR", {
-          message: "Failed to create Nostr pubkey",
-        });
+        throw APIError.from(
+          "INTERNAL_SERVER_ERROR",
+          NOSTR_ERROR_CODES.NOSTR_FAILED_TO_CREATE_PUBKEY,
+        );
       }
 
       return ctx.json({ pubkey }, { status: 200 });

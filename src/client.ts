@@ -15,6 +15,11 @@ import {
   type NostrPath,
 } from "./endpoints";
 import {
+  NOSTR_ERROR_CODES,
+  NostrClientError,
+  type NostrErrorCode,
+} from "./error-codes";
+import {
   DEFAULT_RELAY_TIMEOUT_MS,
   fetchProfile,
   type NostrProfile,
@@ -30,22 +35,40 @@ import {
 import type { NostrPubkey, RelayOptions } from "./types";
 
 type ActionError = {
-  code: string;
+  code: NostrErrorCode;
   message: string;
   status: number;
   statusText: string;
 };
 
-const actionError = (
-  code: string,
-  err: unknown,
-  fallback: string,
-): ActionError => ({
-  code,
-  message: err instanceof Error ? err.message : fallback,
-  status: 400,
-  statusText: "BAD_REQUEST",
-});
+type ActionResult<T> =
+  | { data: T; error: null }
+  | { data: null; error: ActionError };
+
+/**
+ * Better Auth's `{ data, error }` shape for a client-side failure: 400
+ * "BAD_REQUEST" as the passkey client reports a failed ceremony, 408 for a
+ * signer timeout.
+ */
+const clientError = (err: unknown): { data: null; error: ActionError } => {
+  const code =
+    err instanceof NostrClientError ? err.code : "NOSTR_UNKNOWN_ERROR";
+  const timeout = code === "NOSTR_SIGNER_TIMEOUT";
+  return {
+    data: null,
+    error: {
+      code,
+      message:
+        err instanceof Error ? err.message : NOSTR_ERROR_CODES[code].message,
+      status: timeout ? 408 : 400,
+      statusText: timeout ? "REQUEST_TIMEOUT" : "BAD_REQUEST",
+    },
+  };
+};
+
+type ServerError = { code?: string; message?: string };
+
+const ok = <T>(data: T): { data: T; error: null } => ({ data, error: null });
 
 type AddPubkeyOptions = SignerSource & {
   /** Optional display label stored alongside the pubkey row. */
@@ -80,17 +103,6 @@ export const getNostrActions = (
   options?: BetterAuthClientOptions,
   relayOptions: RelayOptions = {},
 ) => {
-  const fetchNonce = async (publicKey: string): Promise<string> => {
-    const { data, error } = await $fetch<{ nonce: string }>(NOSTR_PATHS.nonce, {
-      method: "POST",
-      body: { publicKey },
-    });
-    if (error || !data?.nonce) {
-      throw new Error(error?.message ?? "Failed to fetch nonce");
-    }
-    return data.nonce;
-  };
-
   const mintToken = async (
     url: string,
     signer: NostrSigner,
@@ -102,15 +114,12 @@ export const getNostrActions = (
       url,
       "post",
       async (event) => {
-        const signed = await withTimeout(
-          signer.signEvent(event),
-          timeoutMs,
-          "The signer did not respond in time",
-        );
+        const signed = await withTimeout(signer.signEvent(event), timeoutMs);
         // A signer that switched accounts mid-flow would otherwise fail later
         // as "invalid or expired nonce", pointing at the wrong problem.
         if (signed.pubkey !== publicKey) {
-          throw new Error(
+          throw new NostrClientError(
+            NOSTR_ERROR_CODES.NOSTR_SIGNER_KEY_MISMATCH,
             "The signer signed with a different key than it reported — sign in again",
           );
         }
@@ -120,129 +129,113 @@ export const getNostrActions = (
       payload,
     );
 
-  /** Fetch a nonce for the signer's key and mint a NIP-98 token against it. */
+  /**
+   * Fetch a nonce for the signer's key and mint a NIP-98 token against it. A
+   * server error from the nonce request comes back as is.
+   */
   const authorize = async (path: NostrPath, source?: SignerSource) => {
-    const signer = resolveSigner(source);
-    const publicKey = await signer.getPublicKey();
-    const nonce = await fetchNonce(publicKey);
-    const token = await mintToken(
-      clientEndpointURL(options, path),
-      signer,
-      publicKey,
-      { nonce },
-      source?.timeoutMs ?? DEFAULT_SIGNER_TIMEOUT_MS,
-    );
-    return { nonce, token };
+    try {
+      const signer = resolveSigner(source);
+      const publicKey = await signer.getPublicKey();
+      const response = await $fetch<{ nonce: string }, ServerError>(
+        NOSTR_PATHS.nonce,
+        { method: "POST", body: { publicKey }, throw: false },
+      );
+      if (response.error) return response;
+      const { nonce } = response.data;
+      const token = await mintToken(
+        clientEndpointURL(options, path),
+        signer,
+        publicKey,
+        { nonce },
+        source?.timeoutMs ?? DEFAULT_SIGNER_TIMEOUT_MS,
+      );
+      return ok({ nonce, token });
+    } catch (err) {
+      return clientError(err);
+    }
   };
 
   const signInNostr = async (
     signInOptions?: SignerSource,
     fetchOptions?: BetterFetchOption,
   ) => {
-    try {
-      const { nonce, token } = await authorize(
-        NOSTR_PATHS.login,
-        signInOptions,
-      );
+    const authorized = await authorize(NOSTR_PATHS.login, signInOptions);
+    if (authorized.error) return authorized;
 
-      const response = await $fetch<{
+    const response = await $fetch<
+      {
         session: { id: string; userId: string; expiresAt: Date };
         user: { id: string; email: string; name: string };
-      }>(NOSTR_PATHS.login, {
-        method: "POST",
-        headers: { authorization: token },
-        body: { nonce },
-        ...fetchOptions,
-      });
+      },
+      ServerError
+    >(NOSTR_PATHS.login, {
+      method: "POST",
+      headers: { authorization: authorized.data.token },
+      body: { nonce: authorized.data.nonce },
+      ...fetchOptions,
+    });
 
-      if (!response.error) {
-        $store.notify("$sessionSignal");
-      }
-
-      return response;
-    } catch (err) {
-      return {
-        data: null,
-        error: actionError("NOSTR_SIGN_IN_FAILED", err, "Nostr sign-in failed"),
-      };
+    if (!response.error) {
+      $store.notify("$sessionSignal");
     }
+
+    return response;
   };
 
   const addPubkey = async (
     addOptions?: AddPubkeyOptions,
     fetchOptions?: BetterFetchOption,
   ) => {
-    try {
-      const { nonce, token } = await authorize(
-        NOSTR_PATHS.addPubkey,
-        addOptions,
-      );
+    const authorized = await authorize(NOSTR_PATHS.addPubkey, addOptions);
+    if (authorized.error) return authorized;
 
-      return await $fetch<{ pubkey: NostrPubkey }>(NOSTR_PATHS.addPubkey, {
+    return await $fetch<{ pubkey: NostrPubkey }, ServerError>(
+      NOSTR_PATHS.addPubkey,
+      {
         method: "POST",
-        headers: { authorization: token },
-        body: { nonce, name: addOptions?.name },
+        headers: { authorization: authorized.data.token },
+        body: { nonce: authorized.data.nonce, name: addOptions?.name },
         ...fetchOptions,
-      });
-    } catch (err) {
-      return {
-        data: null,
-        error: actionError(
-          "NOSTR_ADD_PUBKEY_FAILED",
-          err,
-          "Failed to add pubkey",
-        ),
-      };
-    }
+      },
+    );
   };
 
   const signEvent = async (
     template: EventTemplate,
     source?: SignerSource,
-  ): Promise<
-    { data: NostrEvent; error: null } | { data: null; error: ActionError }
-  > => {
+  ): Promise<ActionResult<NostrEvent>> => {
     try {
       const signer = resolveSigner(source);
-      const signed = await withTimeout(
+      const { publicKey, event } = await withTimeout(
         (async () => {
           const publicKey = await signer.getPublicKey();
           return { publicKey, event: await signer.signEvent(template) };
         })(),
         source?.timeoutMs ?? DEFAULT_SIGNER_TIMEOUT_MS,
-        "The signer did not respond in time",
-      ).then(({ publicKey, event }) => {
-        if (event.pubkey !== publicKey) {
-          throw new Error(
-            "The signer signed with a different key than it reported",
-          );
-        }
-        // Rebuilt from protocol fields so nostr-tools' cached verification
-        // flag on the signer's object cannot vouch for mutated content.
-        const fresh: NostrEvent = {
-          id: event.id,
-          pubkey: event.pubkey,
-          created_at: event.created_at,
-          kind: event.kind,
-          tags: event.tags,
-          content: event.content,
-          sig: event.sig,
-        };
-        if (!verifyEvent(fresh)) {
-          throw new Error("The signer returned an invalid event");
-        }
-        return fresh;
-      });
-      return { data: signed, error: null };
-    } catch (err) {
-      return {
-        data: null,
-        error: actionError(
-          "NOSTR_SIGN_EVENT_FAILED",
-          err,
-          "Failed to sign event",
-        ),
+      );
+      if (event.pubkey !== publicKey) {
+        throw new NostrClientError(NOSTR_ERROR_CODES.NOSTR_SIGNER_KEY_MISMATCH);
+      }
+      // Rebuilt from protocol fields so nostr-tools' cached verification
+      // flag on the signer's object cannot vouch for mutated content.
+      const fresh: NostrEvent = {
+        id: event.id,
+        pubkey: event.pubkey,
+        created_at: event.created_at,
+        kind: event.kind,
+        tags: event.tags,
+        content: event.content,
+        sig: event.sig,
       };
+      if (!verifyEvent(fresh)) {
+        throw new NostrClientError(
+          NOSTR_ERROR_CODES.NOSTR_SIGNER_INVALID_EVENT,
+        );
+      }
+      return ok(fresh);
+    } catch (err) {
+      return clientError(err);
     }
   };
 
@@ -254,13 +247,12 @@ export const getNostrActions = (
   const getProfile = async (
     input: string,
     callOptions?: { timeoutMs?: number },
-  ): Promise<
-    | { data: NostrProfile | null; error: null }
-    | { data: null; error: ActionError }
-  > => {
+  ): Promise<ActionResult<NostrProfile | null>> => {
     try {
       if (!relayOptions.relays?.length) {
-        throw new Error("getProfile needs nostrClient({ relays })");
+        throw new NostrClientError(
+          NOSTR_ERROR_CODES.NOSTR_RELAYS_NOT_CONFIGURED,
+        );
       }
       const profile = await fetchProfile(input, {
         relays: relayOptions.relays,
@@ -270,16 +262,9 @@ export const getNostrActions = (
           DEFAULT_RELAY_TIMEOUT_MS,
         followRelayHints: true,
       });
-      return { data: profile, error: null };
+      return ok(profile);
     } catch (err) {
-      return {
-        data: null,
-        error: actionError(
-          "NOSTR_GET_PROFILE_FAILED",
-          err,
-          "Failed to fetch profile",
-        ),
-      };
+      return clientError(err);
     }
   };
 
@@ -314,8 +299,11 @@ export const nostrClient = <O extends RelayOptions = RelayOptions>(
       [NOSTR_PATHS.login]: "POST",
       [NOSTR_PATHS.addPubkey]: "POST",
     },
+    $ERROR_CODES: NOSTR_ERROR_CODES,
   } satisfies BetterAuthClientPlugin;
 };
+
+export { NOSTR_ERROR_CODES, type NostrErrorCode } from "./error-codes";
 
 export type { NostrProfile, NostrProfileMetadata } from "./profile";
 export type {

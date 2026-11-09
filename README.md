@@ -153,6 +153,39 @@ const { data: event, error } = await authClient.nostr.signEvent(
 
 It takes the same `signer` / `nsec` / NIP-07 precedence and `timeoutMs` as `signIn.nostr`, makes no server request, and returns `{ data, error }` like the other actions instead of throwing. The returned event is checked before you see it: its signature must verify and its pubkey must match the one the signer reported. A remote signer only signs kinds it was granted, so widen `perms` (for example `sign_event:1`) when you create it.
 
+### Error codes
+
+`signIn.nostr`, `nostr.addPubkey`, `nostr.signEvent` and `nostr.getProfile` never throw: a failure comes back as `{ data: null, error }` with an `error.code`. Match on the code, not the message. The codes are public API from 1.0 and only change in a breaking release; message text can change any time.
+
+Both plugins declare the codes as `$ERROR_CODES`, so `keyof typeof authClient.$ERROR_CODES` includes them for error translations. To compare at runtime, import `NOSTR_ERROR_CODES` (and its `NostrErrorCode` type) from `better-auth-nostr` or `better-auth-nostr/client`.
+
+The server answers with these, plus Better Auth's own `USER_NOT_FOUND`, `FAILED_TO_CREATE_USER`, `FAILED_TO_CREATE_SESSION` and `VALIDATION_ERROR`:
+
+| Code                                | Status | When                                                              |
+| ----------------------------------- | ------ | ----------------------------------------------------------------- |
+| `NOSTR_MISSING_TOKEN`               | 400    | No NIP-98 token in the `Authorization` header.                    |
+| `NOSTR_INVALID_TOKEN`               | 400    | The header is not a NIP-98 token.                                 |
+| `NOSTR_INVALID_EVENT`               | 401    | The event's signature, kind, URL, method or payload is wrong.     |
+| `NOSTR_EVENT_EXPIRED`               | 401    | The event was signed more than 60 seconds before or after now.    |
+| `NOSTR_INVALID_NONCE`               | 400    | The nonce is blank.                                               |
+| `NOSTR_INVALID_NONCE`               | 401    | The nonce is unknown, used, expired or issued for another pubkey. |
+| `NOSTR_PUBKEY_NOT_REGISTERED`       | 401    | `disableImplicitSignUp` is set and the pubkey has no user.        |
+| `NOSTR_PUBKEY_LINKED_TO_OTHER_USER` | 409    | `addPubkey` for a pubkey another user owns.                       |
+| `NOSTR_FAILED_TO_CREATE_PUBKEY`     | 500    | Storing the pubkey failed.                                        |
+
+The client reports these without a server response, in the shape Better Auth's passkey client uses (`statusText` `"BAD_REQUEST"`, or `"REQUEST_TIMEOUT"` for 408):
+
+| Code                          | Status | When                                                                                  |
+| ----------------------------- | ------ | ------------------------------------------------------------------------------------- |
+| `NOSTR_NO_SIGNER`             | 400    | No `signer`, no `nsec` and no NIP-07 extension.                                       |
+| `NOSTR_SIGNER_TIMEOUT`        | 408    | The signer did not answer within `timeoutMs`.                                         |
+| `NOSTR_SIGNER_TOO_SLOW`       | 400    | The signer approved so late that the server would reject the event.                   |
+| `NOSTR_SIGNER_CLOCK_SKEW`     | 400    | The signer's clock runs ahead of this device's.                                       |
+| `NOSTR_SIGNER_KEY_MISMATCH`   | 400    | The signer signed with a different key than it reported.                              |
+| `NOSTR_SIGNER_INVALID_EVENT`  | 400    | `signEvent`: the signer's event does not verify.                                      |
+| `NOSTR_RELAYS_NOT_CONFIGURED` | 400    | `getProfile` without `nostrClient({ relays })`.                                       |
+| `NOSTR_UNKNOWN_ERROR`         | 400    | Anything else, such as a signer that refuses, an invalid `nsec` or a missing `baseURL`. |
+
 ### Profile metadata
 
 Configure relays on the client and `nostr.getProfile` resolves an `npub`, `nprofile`, hex pubkey or NIP-05 identifier and returns the user's kind `0` metadata, for showing a name and avatar or prefilling a signup form:

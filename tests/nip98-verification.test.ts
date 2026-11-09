@@ -66,8 +66,8 @@ const call = async (
     path === "/nostr/login"
       ? await auth.api.loginNostr(request)
       : await auth.api.addPubkey(request);
-  const body = (await res.json()) as { message?: string };
-  return { status: res.status, message: body.message };
+  const body = (await res.json()) as { code?: string };
+  return { status: res.status, code: body.code };
 };
 
 afterEach(() => {
@@ -92,8 +92,7 @@ describe.each(ENDPOINTS)("NIP-98 checks on %s", (path) => {
     const nonce = await issueNonce(auth, makeKeypair());
 
     const res = await call(auth, path, { nonce });
-    expect(res.status).toBe(400);
-    expect(res.message).toMatch(/authorization token/i);
+    expect(res).toEqual({ status: 400, code: "NOSTR_MISSING_TOKEN" });
   });
 
   it("rejects a blank nonce with 400", async () => {
@@ -104,8 +103,7 @@ describe.each(ENDPOINTS)("NIP-98 checks on %s", (path) => {
       nonce: "   ",
       authorization: await signToken(keypair, path, "   "),
     });
-    expect(res.status).toBe(400);
-    expect(res.message).toBe("Missing nonce");
+    expect(res).toEqual({ status: 400, code: "NOSTR_INVALID_NONCE" });
   });
 
   it("rejects a token that is not a NIP-98 token with 400", async () => {
@@ -116,28 +114,43 @@ describe.each(ENDPOINTS)("NIP-98 checks on %s", (path) => {
       nonce,
       authorization: "Nostr bm90IGpzb24=",
     });
-    expect(res.status).toBe(400);
+    expect(res).toEqual({ status: 400, code: "NOSTR_INVALID_TOKEN" });
   });
 
-  it.each<[string, (nonce: string, path: Endpoint) => TokenOptions]>([
+  it.each<[string, string, (nonce: string, path: Endpoint) => TokenOptions]>([
     [
       "signed for another URL",
+      "NOSTR_INVALID_EVENT",
       () => ({ url: "https://evil.example/api/auth/nostr/login" }),
     ],
     [
       "signed for the other endpoint",
+      "NOSTR_INVALID_EVENT",
       (_, path) => ({
         url: `${TEST_BASE_URL}${path === "/nostr/login" ? "/nostr/add-pubkey" : "/nostr/login"}`,
       }),
     ],
-    ["signed for another method", () => ({ method: "get" })],
+    [
+      "signed for another method",
+      "NOSTR_INVALID_EVENT",
+      () => ({ method: "get" }),
+    ],
     [
       "signed over another payload",
+      "NOSTR_INVALID_EVENT",
       () => ({ payload: { nonce: "some-other-nonce" } }),
     ],
-    ["signed too long ago", () => ({ createdAtOffset: -120 })],
-    ["signed in the future", () => ({ createdAtOffset: 120 })],
-  ])("rejects a token %s with 401 and keeps the nonce", async (_, options) => {
+    [
+      "signed too long ago",
+      "NOSTR_EVENT_EXPIRED",
+      () => ({ createdAtOffset: -120 }),
+    ],
+    [
+      "signed in the future",
+      "NOSTR_EVENT_EXPIRED",
+      () => ({ createdAtOffset: 120 }),
+    ],
+  ])("rejects a token %s with 401 %s and keeps the nonce", async (_, code, options) => {
     const auth = createTestAuth();
     const keypair = makeKeypair();
     const nonce = await issueNonce(auth, keypair);
@@ -151,7 +164,7 @@ describe.each(ENDPOINTS)("NIP-98 checks on %s", (path) => {
         options(nonce, path),
       ),
     });
-    expect(rejected.status).toBe(401);
+    expect(rejected).toEqual({ status: 401, code });
 
     // A rejected signature must not burn the nonce for the real request.
     const accepted = await call(auth, path, {
@@ -172,8 +185,7 @@ describe.each(ENDPOINTS)("NIP-98 checks on %s", (path) => {
       nonce,
       authorization: await signToken(keypair, path, nonce),
     });
-    expect(res.status).toBe(401);
-    expect(res.message).toBe("Invalid or expired nonce");
+    expect(res).toEqual({ status: 401, code: "NOSTR_INVALID_NONCE" });
   });
 
   it("accepts a nonce just inside its nonceTtlMs", async () => {
@@ -199,6 +211,6 @@ describe.each(ENDPOINTS)("NIP-98 checks on %s", (path) => {
       nonce,
       authorization: await signToken(keypair, path, nonce),
     });
-    expect(res.status).toBe(401);
+    expect(res).toEqual({ status: 401, code: "NOSTR_INVALID_NONCE" });
   });
 });

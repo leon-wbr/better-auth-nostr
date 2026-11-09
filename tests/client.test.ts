@@ -9,7 +9,13 @@ import {
 import { unpackEventFromToken } from "nostr-tools/nip98";
 import { bytesToHex } from "nostr-tools/utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getNostrActions, parseSecretKey } from "../src/client";
+import {
+  getNostrActions,
+  NOSTR_ERROR_CODES,
+  nostrClient,
+  parseSecretKey,
+} from "../src/client";
+import { nostr } from "../src/index";
 import {
   createTestAuth,
   createTestFetch,
@@ -58,6 +64,34 @@ describe("parseSecretKey", () => {
     const sk = generateSecretKey();
     const expected = getPublicKey(sk);
     expect(getPublicKey(parseSecretKey(nip19.nsecEncode(sk)))).toBe(expected);
+  });
+});
+
+describe("$ERROR_CODES", () => {
+  // Better Auth types `authClient.$ERROR_CODES` from the server plugin's
+  // `$ERROR_CODES`; official plugins also put them on the client plugin.
+  it("is exposed by the server and the client plugin", () => {
+    expect(Object.keys(nostr().$ERROR_CODES).sort()).toEqual(
+      [
+        "NOSTR_MISSING_TOKEN",
+        "NOSTR_INVALID_TOKEN",
+        "NOSTR_INVALID_EVENT",
+        "NOSTR_EVENT_EXPIRED",
+        "NOSTR_INVALID_NONCE",
+        "NOSTR_PUBKEY_NOT_REGISTERED",
+        "NOSTR_PUBKEY_LINKED_TO_OTHER_USER",
+        "NOSTR_FAILED_TO_CREATE_PUBKEY",
+        "NOSTR_NO_SIGNER",
+        "NOSTR_SIGNER_TIMEOUT",
+        "NOSTR_SIGNER_TOO_SLOW",
+        "NOSTR_SIGNER_CLOCK_SKEW",
+        "NOSTR_SIGNER_KEY_MISMATCH",
+        "NOSTR_SIGNER_INVALID_EVENT",
+        "NOSTR_RELAYS_NOT_CONFIGURED",
+        "NOSTR_UNKNOWN_ERROR",
+      ].sort(),
+    );
+    expect(nostrClient().$ERROR_CODES).toBe(nostr().$ERROR_CODES);
   });
 });
 
@@ -131,7 +165,10 @@ describe("client sign-in", () => {
 
     const result = await actions.signIn.nostr({ nsec: nsecFor(keypair) });
 
-    expect(result.error).not.toBeNull();
+    expect(result.error).toMatchObject({
+      code: "NOSTR_PUBKEY_NOT_REGISTERED",
+      status: 401,
+    });
     expect(notified).toHaveLength(0);
   });
 
@@ -145,7 +182,56 @@ describe("client sign-in", () => {
 
     const result = await actions.signIn.nostr();
     expect(result.data).toBeNull();
-    expect(result.error?.message).toMatch(/NIP-07|NSEC/);
+    expect(result.error?.code).toBe("NOSTR_NO_SIGNER");
+  });
+
+  // Better Auth's passkey client reports a failed client-side ceremony the
+  // same way: status 400, statusText "BAD_REQUEST", a code from $ERROR_CODES.
+  it("reports a client-side failure as 400 BAD_REQUEST with a plugin error code", async () => {
+    const { $store } = createTestStore();
+    const actions = getNostrActions(
+      createTestFetch(createTestAuth()),
+      {
+        $store,
+      },
+      { baseURL: TEST_ORIGIN } as any,
+    );
+
+    const result = await actions.signIn.nostr();
+
+    expect(result.error).toMatchObject({
+      code: NOSTR_ERROR_CODES.NOSTR_NO_SIGNER.code,
+      status: 400,
+      statusText: "BAD_REQUEST",
+    });
+  });
+
+  it("keeps the server's own status when the server rejects the sign-in", async () => {
+    const auth = createTestAuth();
+    const keypair = makeKeypair();
+    const { $store, notified } = createTestStore();
+    const $fetch = createTestFetch(auth);
+
+    // Send a nonce the server never issued, so the real handler answers 401.
+    const staleNonceFetch = ((path: string, init?: any) =>
+      ($fetch as any)(
+        path,
+        path === "/nostr/login"
+          ? { ...init, body: { nonce: "never-issued-nonce" } }
+          : init,
+      )) as any;
+    const actions = getNostrActions(staleNonceFetch, { $store }, {
+      baseURL: TEST_ORIGIN,
+    } as any);
+
+    const result = await actions.signIn.nostr({ nsec: nsecFor(keypair) });
+
+    expect(result.data).toBeNull();
+    expect(result.error).toMatchObject({
+      code: "NOSTR_INVALID_EVENT",
+      status: 401,
+    });
+    expect(notified).toHaveLength(0);
   });
 
   it("links an additional pubkey through the client action", async () => {
@@ -264,7 +350,55 @@ describe("remote signer sign-in", () => {
     });
 
     expect(result.data).toBeNull();
-    expect(result.error?.message).toMatch(/too long|expired/i);
+    expect(result.error).toMatchObject({
+      code: "NOSTR_SIGNER_TOO_SLOW",
+      status: 400,
+    });
+  });
+
+  it("reports a signer clock running ahead as clock skew", async () => {
+    const { $store } = createTestStore();
+    const actions = getNostrActions(
+      createTestFetch(createTestAuth()),
+      { $store },
+      { baseURL: TEST_ORIGIN } as any,
+    );
+
+    const result = await actions.signIn.nostr({
+      signer: remoteSigner(makeKeypair(), { clockSkewSeconds: -55 }),
+    });
+
+    expect(result.error?.code).toBe("NOSTR_SIGNER_CLOCK_SKEW");
+  });
+
+  it("reports a signer that refuses as NOSTR_UNKNOWN_ERROR with its message", async () => {
+    const { $store, notified } = createTestStore();
+    const actions = getNostrActions(
+      createTestFetch(createTestAuth()),
+      { $store },
+      { baseURL: TEST_ORIGIN } as any,
+    );
+    const keypair = makeKeypair();
+
+    const result = await actions.signIn.nostr({
+      signer: {
+        getPublicKey: async () => keypair.publicKey,
+        signEvent: async () => {
+          throw new Error("user denied");
+        },
+      },
+    });
+
+    expect(result).toEqual({
+      data: null,
+      error: {
+        code: "NOSTR_UNKNOWN_ERROR",
+        message: "user denied",
+        status: 400,
+        statusText: "BAD_REQUEST",
+      },
+    });
+    expect(notified).toHaveLength(0);
   });
 });
 
@@ -328,8 +462,29 @@ describe("client signEvent", () => {
     const result = await actionsFor().nostr.signEvent(note());
 
     expect(result.data).toBeNull();
-    expect(result.error?.code).toBe("NOSTR_SIGN_EVENT_FAILED");
-    expect(result.error?.message).toMatch(/NIP-07|NSEC/);
+    expect(result.error).toMatchObject({
+      code: "NOSTR_NO_SIGNER",
+      status: 400,
+      statusText: "BAD_REQUEST",
+    });
+  });
+
+  it("falls back to the code's own message when the thrown value is not an Error", async () => {
+    const signer = {
+      getPublicKey: async () => {
+        throw "no";
+      },
+      signEvent: async () => {
+        throw "no";
+      },
+    };
+
+    const result = await actionsFor().nostr.signEvent(note(), { signer });
+
+    expect(result.error).toMatchObject({
+      code: "NOSTR_UNKNOWN_ERROR",
+      message: NOSTR_ERROR_CODES.NOSTR_UNKNOWN_ERROR.message,
+    });
   });
 
   it("times out a signer that never answers", async () => {
@@ -342,7 +497,12 @@ describe("client signEvent", () => {
       timeoutMs: 20,
     });
 
-    expect(result.error?.message).toMatch(/did not respond/);
+    expect(result.error).toEqual({
+      code: "NOSTR_SIGNER_TIMEOUT",
+      message: NOSTR_ERROR_CODES.NOSTR_SIGNER_TIMEOUT.message,
+      status: 408,
+      statusText: "REQUEST_TIMEOUT",
+    });
   });
 
   it("rejects an event signed by a different key than the signer reported", async () => {
@@ -356,7 +516,7 @@ describe("client signEvent", () => {
     const result = await actionsFor().nostr.signEvent(note(), { signer });
 
     expect(result.data).toBeNull();
-    expect(result.error?.message).toMatch(/different key/);
+    expect(result.error?.code).toBe("NOSTR_SIGNER_KEY_MISMATCH");
   });
 
   it("rejects an event whose signature does not verify", async () => {
@@ -374,7 +534,7 @@ describe("client signEvent", () => {
     const result = await actionsFor().nostr.signEvent(note(), { signer });
 
     expect(result.data).toBeNull();
-    expect(result.error?.message).toMatch(/invalid/i);
+    expect(result.error?.code).toBe("NOSTR_SIGNER_INVALID_EVENT");
   });
 
   it("times out a signer whose getPublicKey never answers", async () => {
@@ -389,8 +549,10 @@ describe("client signEvent", () => {
     });
 
     expect(result.data).toBeNull();
-    expect(result.error?.code).toBe("NOSTR_SIGN_EVENT_FAILED");
-    expect(result.error?.message).toMatch(/did not respond/);
+    expect(result.error).toMatchObject({
+      code: "NOSTR_SIGNER_TIMEOUT",
+      status: 408,
+    });
   });
 
   it("rejects a finalized event mutated after signing, without serialization", async () => {
@@ -406,15 +568,18 @@ describe("client signEvent", () => {
     const result = await actionsFor().nostr.signEvent(note(), { signer });
 
     expect(result.data).toBeNull();
-    expect(result.error?.message).toMatch(/invalid/i);
+    expect(result.error?.code).toBe("NOSTR_SIGNER_INVALID_EVENT");
   });
 });
 
 describe("client error paths", () => {
   const nsecFor = (keypair: { secretKey: Uint8Array }) =>
     nip19.nsecEncode(keypair.secretKey);
-  const noBaseUrlMessage =
-    "nostrClient: cannot determine absolute URL — set baseURL on the client";
+  const noBaseUrl = {
+    code: "NOSTR_UNKNOWN_ERROR",
+    message:
+      "nostrClient: cannot determine absolute URL — set baseURL on the client",
+  };
 
   it("reports a missing baseURL outside a browser instead of signing against a bad URL", async () => {
     const { $store, notified } = createTestStore();
@@ -429,10 +594,7 @@ describe("client error paths", () => {
     });
 
     expect(result.data).toBeNull();
-    expect(result.error).toMatchObject({
-      code: "NOSTR_SIGN_IN_FAILED",
-      message: noBaseUrlMessage,
-    });
+    expect(result.error).toMatchObject(noBaseUrl);
     expect(notified).toHaveLength(0);
   });
 
@@ -449,10 +611,7 @@ describe("client error paths", () => {
     });
 
     expect(result.data).toBeNull();
-    expect(result.error).toMatchObject({
-      code: "NOSTR_ADD_PUBKEY_FAILED",
-      message: noBaseUrlMessage,
-    });
+    expect(result.error).toMatchObject(noBaseUrl);
   });
 
   describe("when the nonce request fails", () => {
@@ -469,47 +628,30 @@ describe("client error paths", () => {
       return { actions, calls };
     };
 
-    it("surfaces the server's error message and stops before login", async () => {
-      const { actions, calls } = actionsWithNonceResponse({
-        data: null,
-        error: { message: "Too many requests", status: 429 },
-      });
+    const serverError = {
+      data: null,
+      error: { message: "Too many requests", status: 429 },
+    };
+
+    it("returns the server's error as is and stops before login", async () => {
+      const { actions, calls } = actionsWithNonceResponse(serverError);
 
       const result = await actions.signIn.nostr({
         nsec: nsecFor(makeKeypair()),
       });
 
-      expect(result.data).toBeNull();
-      expect(result.error).toMatchObject({
-        code: "NOSTR_SIGN_IN_FAILED",
-        message: "Too many requests",
-      });
+      expect(result).toEqual(serverError);
       expect(calls).toEqual(["/nostr/nonce"]);
     });
 
-    it("falls back to a generic message when the error has none", async () => {
-      const { actions } = actionsWithNonceResponse({ data: null, error: {} });
+    it("returns it from addPubkey too", async () => {
+      const { actions } = actionsWithNonceResponse(serverError);
 
       const result = await actions.nostr.addPubkey({
         nsec: nsecFor(makeKeypair()),
       });
 
-      expect(result.data).toBeNull();
-      expect(result.error).toMatchObject({
-        code: "NOSTR_ADD_PUBKEY_FAILED",
-        message: "Failed to fetch nonce",
-      });
-    });
-
-    it("treats a response without a nonce as a failure", async () => {
-      const { actions } = actionsWithNonceResponse({ data: {}, error: null });
-
-      const result = await actions.signIn.nostr({
-        nsec: nsecFor(makeKeypair()),
-      });
-
-      expect(result.data).toBeNull();
-      expect(result.error?.message).toBe("Failed to fetch nonce");
+      expect(result).toEqual(serverError);
     });
   });
 
@@ -523,8 +665,6 @@ describe("client error paths", () => {
           finalizeEvent(event, actual.secretKey),
       };
     };
-    const message =
-      "The signer signed with a different key than it reported — sign in again";
 
     it("fails sign-in before anything is sent to the login endpoint", async () => {
       const { $store, notified } = createTestStore();
@@ -541,10 +681,7 @@ describe("client error paths", () => {
       const result = await actions.signIn.nostr({ signer: switchedSigner() });
 
       expect(result.data).toBeNull();
-      expect(result.error).toMatchObject({
-        code: "NOSTR_SIGN_IN_FAILED",
-        message,
-      });
+      expect(result.error?.code).toBe("NOSTR_SIGNER_KEY_MISMATCH");
       expect(calls).toEqual(["/nostr/nonce"]);
       expect(notified).toHaveLength(0);
     });
@@ -562,10 +699,7 @@ describe("client error paths", () => {
       });
 
       expect(result.data).toBeNull();
-      expect(result.error).toMatchObject({
-        code: "NOSTR_ADD_PUBKEY_FAILED",
-        message,
-      });
+      expect(result.error?.code).toBe("NOSTR_SIGNER_KEY_MISMATCH");
     });
   });
 });

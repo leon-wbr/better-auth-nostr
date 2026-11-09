@@ -72,6 +72,9 @@ describe.skipIf(!sqlite)("implicit sign-up on SQLite", () => {
   it("still rejects a replayed nonce after a concurrent sign-up", async () => {
     const { first } = await raceFirstLogins();
 
-    expect((await first()).status).toBe(401);
+    const replay = await first();
+
+    expect(replay.status).toBe(401);
+    expect(await replay.json()).toMatchObject({ code: "NOSTR_INVALID_NONCE" });
   });
 });
