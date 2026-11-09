@@ -318,7 +318,6 @@ describe("storage failures", () => {
       message: "Failed to create session",
     });
     expect(text).not.toContain("relation");
-    vi.restoreAllMocks();
   });
 });
 
@@ -467,7 +466,6 @@ describe("POST /nostr/add-pubkey", () => {
       statusCode: 500,
       body: { message: "Failed to create Nostr pubkey" },
     });
-    vi.restoreAllMocks();
   });
 
   it("answers 500 without database detail when the pubkey insert throws", async () => {
@@ -483,17 +481,14 @@ describe("POST /nostr/add-pubkey", () => {
         : create(args),
     );
 
-    const failure = await linkPubkey(
-      auth,
-      sessionHeaders,
-      makeKeypair(),
-    ).catch((error) => error);
+    const failure = await linkPubkey(auth, sessionHeaders, makeKeypair()).catch(
+      (error) => error,
+    );
 
     expect(failure).toMatchObject({
       statusCode: 500,
       body: { message: "Failed to create Nostr pubkey" },
     });
     expect(JSON.stringify(failure.body)).not.toContain("10.0.0.5");
-    vi.restoreAllMocks();
   });
 });

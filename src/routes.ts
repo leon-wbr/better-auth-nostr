@@ -169,7 +169,11 @@ const userInfoFromProfile = async (
  * goes to the server log only, never into the response body.
  */
 const guardStorage = async <T>(
-  ctx: { context: { logger: { error: (...args: unknown[]) => void } } },
+  ctx: {
+    context: {
+      logger: { error: (message: string, ...args: unknown[]) => void };
+    };
+  },
   message: string,
   run: () => Promise<T>,
 ): Promise<T> => {
