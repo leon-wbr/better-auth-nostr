@@ -17,14 +17,16 @@ const createMemoryDb = (modelName: string): MemoryDB => ({
 
 export const createTestAuth = (
   options?: NostrOptions,
-  { user }: Pick<BetterAuthOptions, "user"> = {},
+  {
+    user,
+    db = createMemoryDb(options?.modelName ?? "nostrPubkey"),
+  }: Pick<BetterAuthOptions, "user"> & { db?: MemoryDB } = {},
 ) => {
-  const modelName = options?.modelName ?? "nostrPubkey";
   return betterAuth({
     user,
     baseURL: TEST_ORIGIN,
     secret: "test-secret-do-not-use-in-production",
-    database: memoryAdapter(createMemoryDb(modelName)),
+    database: memoryAdapter(db),
     emailAndPassword: { enabled: false },
     plugins: [nostr(options)],
     advanced: { disableCSRFCheck: true },

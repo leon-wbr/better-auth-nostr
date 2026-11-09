@@ -1,3 +1,4 @@
+import type { MemoryDB } from "better-auth/adapters/memory";
 import { describe, expect, it } from "vitest";
 import {
   cookiesFromResponse,
@@ -244,6 +245,52 @@ describe("POST /nostr/login", () => {
 
     const res = await performLogin(auth, keypair);
     expect(res.status).toBe(200);
+  });
+});
+
+describe("renamed model and fields", () => {
+  const renamed = {
+    modelName: "nostrIdentity",
+    fields: {
+      name: "label",
+      publicKey: "pub_key",
+      userId: "owner_id",
+      createdAt: "created_on",
+    },
+  };
+
+  it("stores logins and linked pubkeys under the configured names", async () => {
+    const db: MemoryDB = { nostrIdentity: [] };
+    const auth = createTestAuth(renamed, { db });
+    const primary = makeKeypair();
+    const secondary = makeKeypair();
+
+    const loginRes = await performLogin(auth, primary);
+    expect(loginRes.status).toBe(200);
+    // A second login finds the row again by its renamed column.
+    expect((await performLogin(auth, primary)).status).toBe(200);
+    expect(db.nostrIdentity).toHaveLength(1);
+
+    const nonce = await issueNonce(auth, secondary);
+    const headers = new Headers(cookiesFromResponse(loginRes));
+    headers.set("authorization", await signAddPubkeyToken(secondary, nonce));
+    const { pubkey } = await auth.api.addPubkey({
+      body: { nonce, name: "Backup key" },
+      headers,
+    });
+
+    // The API speaks in schema keys...
+    expect(pubkey.publicKey).toBe(secondary.publicKey);
+    expect(pubkey.name).toBe("Backup key");
+    // ...while the rows carry the configured column names.
+    expect(db.nostrIdentity).toHaveLength(2);
+    expect(db.nostrIdentity?.[1]).toMatchObject({
+      pub_key: secondary.publicKey,
+      label: "Backup key",
+    });
+    expect(db.nostrIdentity?.[1]).toHaveProperty("owner_id");
+    expect(db.nostrIdentity?.[1]).toHaveProperty("created_on");
+    expect(db.nostrIdentity?.[1]).not.toHaveProperty("publicKey");
   });
 });
 

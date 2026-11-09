@@ -94,10 +94,17 @@ const verifyNip98Request = async (
   return event.pubkey;
 };
 
-const resolveModel = (opts?: NostrOptions) => ({
-  model: opts?.modelName ?? "nostrPubkey",
-  pubkeyField: opts?.fields?.publicKey ?? "publicKey",
-});
+/**
+ * The schema key of the pubkey model. Adapter calls use schema keys and Better
+ * Auth maps them to the configured `modelName` and `fields`.
+ */
+const MODEL = "nostrPubkey";
+
+const findPubkeyRow = (ctx: GenericEndpointContext, pubkey: string) =>
+  ctx.context.adapter.findOne<NostrPubkey>({
+    model: MODEL,
+    where: [{ field: "publicKey", value: pubkey }],
+  });
 
 const httpsUrl = z.url({ protocol: /^https$/ });
 
@@ -231,12 +238,7 @@ export const loginNostr = (opts?: NostrOptions) =>
     async (ctx) => {
       const pubkey = await verifyNip98Request(ctx, "/nostr/login");
 
-      const { model, pubkeyField } = resolveModel(opts);
-
-      let nostrPubkey = await ctx.context.adapter.findOne<NostrPubkey>({
-        model,
-        where: [{ field: pubkeyField, value: pubkey }],
-      });
+      let nostrPubkey = await findPubkeyRow(ctx, pubkey);
 
       let user: User | null = null;
 
@@ -268,7 +270,7 @@ export const loginNostr = (opts?: NostrOptions) =>
         }
 
         nostrPubkey = await ctx.context.adapter.create<NostrPubkey>({
-          model,
+          model: MODEL,
           data: {
             publicKey: pubkey,
             userId: user.id,
@@ -319,7 +321,7 @@ export const loginNostr = (opts?: NostrOptions) =>
     },
   );
 
-export const addPubkey = (opts?: NostrOptions) =>
+export const addPubkey = (_opts?: NostrOptions) =>
   createAuthEndpoint(
     "/nostr/add-pubkey",
     {
@@ -352,12 +354,7 @@ export const addPubkey = (opts?: NostrOptions) =>
 
       const signer = await verifyNip98Request(ctx, "/nostr/add-pubkey");
 
-      const { model, pubkeyField } = resolveModel(opts);
-
-      const existing = await ctx.context.adapter.findOne<NostrPubkey>({
-        model,
-        where: [{ field: pubkeyField, value: signer }],
-      });
+      const existing = await findPubkeyRow(ctx, signer);
 
       if (existing && existing.userId !== session.user.id) {
         throw new APIError("CONFLICT", {
@@ -369,7 +366,7 @@ export const addPubkey = (opts?: NostrOptions) =>
       }
 
       const pubkey = await ctx.context.adapter.create<NostrPubkey>({
-        model,
+        model: MODEL,
         data: {
           publicKey: signer,
           userId: session.user.id,
