@@ -250,6 +250,64 @@ describe("remote signer sign-in", () => {
     expect(result.error).toBeNull();
   });
 
+  describe("a signer that returns a tampered event", () => {
+    const tamperedCases: [string, (e: EventTemplate, sk: Uint8Array) => any][] =
+      [
+        [
+          "a bad signature after serialization",
+          (event, sk) =>
+            JSON.parse(
+              JSON.stringify({
+                ...finalizeEvent(event, sk),
+                content: "tampered",
+              }),
+            ),
+        ],
+        [
+          "content mutated after signing, with nostr-tools' cached verification flag set",
+          (event, sk) => {
+            const signed = finalizeEvent(event, sk);
+            signed.content = "tampered";
+            return signed;
+          },
+        ],
+      ];
+
+    it.each(
+      tamperedCases,
+    )("is rejected client-side: %s", async (_name, tamper) => {
+      const auth = createTestAuth();
+      const keypair = makeKeypair();
+      const { $store, notified } = createTestStore();
+      const $fetch = createTestFetch(auth);
+
+      const sentTokens: string[] = [];
+      const spyFetch = ((path: string, init?: any) => {
+        if (init?.headers?.authorization) {
+          sentTokens.push(init.headers.authorization);
+        }
+        return ($fetch as any)(path, init);
+      }) as any;
+      const actions = getNostrActions(spyFetch, { $store }, {
+        baseURL: TEST_ORIGIN,
+      } as any);
+
+      const result = await actions.signIn.nostr({
+        signer: {
+          getPublicKey: async () => keypair.publicKey,
+          signEvent: async (event: EventTemplate) =>
+            tamper(event, keypair.secretKey),
+        },
+      });
+
+      expect(result.data).toBeNull();
+      // The bad token must never leave the client, not even to be refused.
+      expect(sentTokens).toEqual([]);
+      expect(result.error?.message).toMatch(/invalid event/i);
+      expect(notified).toHaveLength(0);
+    });
+  });
+
   it("reports a slow approval as a timeout rather than an opaque 401", async () => {
     const auth = createTestAuth();
     const keypair = makeKeypair();
