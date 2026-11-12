@@ -14,6 +14,7 @@ import {
   NOSTR_PATHS,
   type NostrPath,
 } from "./endpoints";
+import { NOSTR_ERROR_CODES, type NostrErrorCode } from "./error-codes";
 import {
   DEFAULT_RELAY_TIMEOUT_MS,
   fetchProfile,
@@ -30,22 +31,42 @@ import {
 import type { NostrPubkey, RelayOptions } from "./types";
 
 type ActionError = {
-  code: string;
+  code: NostrErrorCode;
   message: string;
   status: number;
   statusText: string;
 };
 
-const actionError = (
-  code: string,
-  err: unknown,
-  fallback: string,
-): ActionError => ({
-  code,
-  message: err instanceof Error ? err.message : fallback,
-  status: 400,
-  statusText: "BAD_REQUEST",
-});
+type ActionResult<T> =
+  | { data: T; error: null }
+  | { data: null; error: ActionError };
+
+/**
+ * Runs a client-side action and turns a thrown error into Better Auth's
+ * `{ data, error }` shape, with status 400 "BAD_REQUEST" as Better Auth's
+ * passkey client does for a failed ceremony. Responses `run` returns (such as
+ * a `$fetch` result carrying the server's own status) pass through untouched.
+ */
+const asAction = async <R>(
+  { code, message }: (typeof NOSTR_ERROR_CODES)[NostrErrorCode],
+  run: () => Promise<R>,
+): Promise<R | { data: null; error: ActionError }> => {
+  try {
+    return await run();
+  } catch (err) {
+    return {
+      data: null,
+      error: {
+        code,
+        message: err instanceof Error ? err.message : message,
+        status: 400,
+        statusText: "BAD_REQUEST",
+      },
+    };
+  }
+};
+
+const ok = <T>(data: T): { data: T; error: null } => ({ data, error: null });
 
 type AddPubkeyOptions = SignerSource & {
   /** Optional display label stored alongside the pubkey row. */
@@ -138,8 +159,8 @@ export const getNostrActions = (
   const signInNostr = async (
     signInOptions?: SignerSource,
     fetchOptions?: BetterFetchOption,
-  ) => {
-    try {
+  ) =>
+    asAction(NOSTR_ERROR_CODES.NOSTR_SIGN_IN_FAILED, async () => {
       const { nonce, token } = await authorize(
         NOSTR_PATHS.login,
         signInOptions,
@@ -160,19 +181,13 @@ export const getNostrActions = (
       }
 
       return response;
-    } catch (err) {
-      return {
-        data: null,
-        error: actionError("NOSTR_SIGN_IN_FAILED", err, "Nostr sign-in failed"),
-      };
-    }
-  };
+    });
 
-  const addPubkey = async (
+  const addPubkey = (
     addOptions?: AddPubkeyOptions,
     fetchOptions?: BetterFetchOption,
-  ) => {
-    try {
+  ) =>
+    asAction(NOSTR_ERROR_CODES.NOSTR_ADD_PUBKEY_FAILED, async () => {
       const { nonce, token } = await authorize(
         NOSTR_PATHS.addPubkey,
         addOptions,
@@ -184,25 +199,13 @@ export const getNostrActions = (
         body: { nonce, name: addOptions?.name },
         ...fetchOptions,
       });
-    } catch (err) {
-      return {
-        data: null,
-        error: actionError(
-          "NOSTR_ADD_PUBKEY_FAILED",
-          err,
-          "Failed to add pubkey",
-        ),
-      };
-    }
-  };
+    });
 
-  const signEvent = async (
+  const signEvent = (
     template: EventTemplate,
     source?: SignerSource,
-  ): Promise<
-    { data: NostrEvent; error: null } | { data: null; error: ActionError }
-  > => {
-    try {
+  ): Promise<ActionResult<NostrEvent>> =>
+    asAction(NOSTR_ERROR_CODES.NOSTR_SIGN_EVENT_FAILED, async () => {
       const signer = resolveSigner(source);
       const signed = await withTimeout(
         (async () => {
@@ -233,32 +236,19 @@ export const getNostrActions = (
         }
         return fresh;
       });
-      return { data: signed, error: null };
-    } catch (err) {
-      return {
-        data: null,
-        error: actionError(
-          "NOSTR_SIGN_EVENT_FAILED",
-          err,
-          "Failed to sign event",
-        ),
-      };
-    }
-  };
+      return ok(signed);
+    });
 
   /**
    * Fetch the kind 0 profile for an npub, nprofile, hex pubkey or NIP-05
    * identifier from the configured relays plus the input's own relay hints.
    * `data` is `null` when no relay has a profile.
    */
-  const getProfile = async (
+  const getProfile = (
     input: string,
     callOptions?: { timeoutMs?: number },
-  ): Promise<
-    | { data: NostrProfile | null; error: null }
-    | { data: null; error: ActionError }
-  > => {
-    try {
+  ): Promise<ActionResult<NostrProfile | null>> =>
+    asAction(NOSTR_ERROR_CODES.NOSTR_GET_PROFILE_FAILED, async () => {
       if (!relayOptions.relays?.length) {
         throw new Error("getProfile needs nostrClient({ relays })");
       }
@@ -270,18 +260,8 @@ export const getNostrActions = (
           DEFAULT_RELAY_TIMEOUT_MS,
         followRelayHints: true,
       });
-      return { data: profile, error: null };
-    } catch (err) {
-      return {
-        data: null,
-        error: actionError(
-          "NOSTR_GET_PROFILE_FAILED",
-          err,
-          "Failed to fetch profile",
-        ),
-      };
-    }
-  };
+      return ok(profile);
+    });
 
   return {
     signIn: { nostr: signInNostr },
@@ -314,8 +294,11 @@ export const nostrClient = <O extends RelayOptions = RelayOptions>(
       [NOSTR_PATHS.login]: "POST",
       [NOSTR_PATHS.addPubkey]: "POST",
     },
+    $ERROR_CODES: NOSTR_ERROR_CODES,
   } satisfies BetterAuthClientPlugin;
 };
+
+export { NOSTR_ERROR_CODES, type NostrErrorCode } from "./error-codes";
 
 export type { NostrProfile, NostrProfileMetadata } from "./profile";
 export type {
