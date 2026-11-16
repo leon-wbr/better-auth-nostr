@@ -182,7 +182,7 @@ The client reports these without a server response, in the shape Better Auth's p
 | `NOSTR_SIGNER_TOO_SLOW`       | 400    | The signer approved so late that the server would reject the event.                   |
 | `NOSTR_SIGNER_CLOCK_SKEW`     | 400    | The signer's clock runs ahead of this device's.                                       |
 | `NOSTR_SIGNER_KEY_MISMATCH`   | 400    | The signer signed with a different key than it reported.                              |
-| `NOSTR_SIGNER_INVALID_EVENT`  | 400    | `signEvent`: the signer's event does not verify.                                      |
+| `NOSTR_SIGNER_INVALID_EVENT`  | 400    | The signer's event does not verify.                                                   |
 | `NOSTR_RELAYS_NOT_CONFIGURED` | 400    | `getProfile` without `nostrClient({ relays })`.                                       |
 | `NOSTR_UNKNOWN_ERROR`         | 400    | Anything else, such as a signer that refuses, an invalid `nsec` or a missing `baseURL`. |
 
