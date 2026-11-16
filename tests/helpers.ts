@@ -21,7 +21,8 @@ export const createTestAuth = (
     user,
     databaseHooks,
     db = createMemoryDb(options?.modelName ?? "nostrPubkey"),
-  }: Pick<BetterAuthOptions, "user" | "databaseHooks"> & {
+    database = memoryAdapter(db),
+  }: Pick<BetterAuthOptions, "user" | "databaseHooks" | "database"> & {
     db?: MemoryDB;
   } = {},
 ) => {
@@ -30,7 +31,7 @@ export const createTestAuth = (
     databaseHooks,
     baseURL: TEST_ORIGIN,
     secret: "test-secret-do-not-use-in-production",
-    database: memoryAdapter(db),
+    database,
     emailAndPassword: { enabled: false },
     plugins: [nostr(options)],
     advanced: { disableCSRFCheck: true },
@@ -71,19 +72,19 @@ export const issueNonce = async (auth: TestAuth, keypair: Keypair) => {
   return nonce;
 };
 
-export const performLogin = async (
-  auth: TestAuth,
-  keypair: Keypair,
-): Promise<Response> => {
+export const prepareLogin = async (auth: TestAuth, keypair: Keypair) => {
   const nonce = await issueNonce(auth, keypair);
   const token = await signLoginToken(keypair, nonce);
-
-  return auth.api.loginNostr({
-    body: { nonce },
-    headers: new Headers({ authorization: token }),
-    asResponse: true,
-  });
+  return (): Promise<Response> =>
+    auth.api.loginNostr({
+      body: { nonce },
+      headers: new Headers({ authorization: token }),
+      asResponse: true,
+    });
 };
+
+export const performLogin = async (auth: TestAuth, keypair: Keypair) =>
+  (await prepareLogin(auth, keypair))();
 
 export const cookiesFromResponse = (res: Response): Headers => {
   const headers = new Headers();

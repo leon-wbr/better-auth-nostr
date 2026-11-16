@@ -1,4 +1,8 @@
 import { randomBytes } from "node:crypto";
+import {
+  getCurrentAdapter,
+  runWithTransaction,
+} from "@better-auth/core/context";
 import type { GenericEndpointContext, User } from "better-auth";
 import {
   APIError,
@@ -181,6 +185,57 @@ const guardStorage = async <T>(
   }
 };
 
+/**
+ * Creates the user and its pubkey row in one transaction, so neither exists
+ * without the other. A concurrent first login for the same pubkey makes one
+ * of the two inserts fail on a unique index; the loser rolls back and signs
+ * in as the user the winner created.
+ */
+const signUp = async (
+  ctx: GenericEndpointContext,
+  opts: NostrOptions | undefined,
+  pubkey: string,
+): Promise<{ user: User; nostrPubkey: NostrPubkey }> => {
+  const npub = nip19.npubEncode(pubkey);
+  const email =
+    (await opts?.generateEmail?.(npub, pubkey)) ?? `${npub}@nostr.local`;
+  // Fetched before the transaction, so the relay wait never holds it open.
+  const userInfo = await userInfoFromProfile(ctx, opts, pubkey, "create");
+
+  try {
+    return await runWithTransaction(ctx.context.adapter, async () => {
+      const user = await ctx.context.internalAdapter.createUser(
+        { ...userInfo, name: userInfo?.name || npub, email },
+        { method: "nostr" },
+      );
+      if (!user) {
+        throw new APIError("INTERNAL_SERVER_ERROR", {
+          message: "Failed to create user",
+        });
+      }
+
+      const adapter = await getCurrentAdapter(ctx.context.adapter);
+      const nostrPubkey = await adapter.create<NostrPubkey>({
+        model: MODEL,
+        data: { publicKey: pubkey, userId: user.id, createdAt: new Date() },
+      });
+      if (!nostrPubkey) {
+        throw new APIError("INTERNAL_SERVER_ERROR", {
+          message: "Failed to create Nostr pubkey",
+        });
+      }
+      return { user, nostrPubkey };
+    });
+  } catch (error) {
+    const nostrPubkey = await findPubkeyRow(ctx, pubkey);
+    const user =
+      nostrPubkey &&
+      (await ctx.context.internalAdapter.findUserById(nostrPubkey.userId));
+    if (!nostrPubkey || !user) throw error;
+    return { user, nostrPubkey };
+  }
+};
+
 export const getNostrNonce = (opts?: NostrOptions) =>
   createAuthEndpoint(
     NOSTR_PATHS.nonce,
@@ -266,39 +321,7 @@ export const loginNostr = (opts?: NostrOptions) =>
           });
         }
 
-        const npub = nip19.npubEncode(pubkey);
-        const email =
-          (await opts?.generateEmail?.(npub, pubkey)) ?? `${npub}@nostr.local`;
-
-        const userInfo = await userInfoFromProfile(ctx, opts, pubkey, "create");
-
-        user = await ctx.context.internalAdapter.createUser(
-          {
-            ...userInfo,
-            name: userInfo?.name || npub,
-            email,
-          },
-          { method: "nostr" },
-        );
-        if (!user) {
-          throw new APIError("INTERNAL_SERVER_ERROR", {
-            message: "Failed to create user",
-          });
-        }
-
-        nostrPubkey = await ctx.context.adapter.create<NostrPubkey>({
-          model: MODEL,
-          data: {
-            publicKey: pubkey,
-            userId: user.id,
-            createdAt: new Date(),
-          },
-        });
-        if (!nostrPubkey) {
-          throw new APIError("INTERNAL_SERVER_ERROR", {
-            message: "Failed to create Nostr pubkey",
-          });
-        }
+        ({ user, nostrPubkey } = await signUp(ctx, opts, pubkey));
       } else {
         user = await ctx.context.internalAdapter.findUserById(
           nostrPubkey.userId,
