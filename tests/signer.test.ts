@@ -68,8 +68,9 @@ describe("resolveSigner", () => {
   });
 
   it("throws an actionable error when nothing is available", () => {
-    expect(() => resolveSigner()).toThrow(/NIP-07/);
-    expect(() => resolveSigner()).toThrow(/signer/i);
+    expect(() => resolveSigner()).toThrow(
+      expect.objectContaining({ code: "NOSTR_NO_SIGNER" }),
+    );
   });
 });
 
@@ -174,7 +175,9 @@ describe("remote signer timeouts", () => {
 
     await expect(
       createBunkerSigner(bunkerUriFor(pubkey), { pool, timeoutMs: 50 }),
-    ).rejects.toThrow(/in time/i);
+    ).rejects.toThrow(
+      expect.objectContaining({ code: "NOSTR_SIGNER_TIMEOUT" }),
+    );
   });
 
   it("leaves a caller-supplied pool open after a failed connect", async () => {
@@ -220,6 +223,10 @@ describe("remote signer timeouts", () => {
 describe("assertFreshlySigned", () => {
   // Only Date is faked: relay and signer timeouts still need real timers.
   const NOW_SECONDS = 1_800_000_000;
+  const TOO_SLOW = expect.objectContaining({ code: "NOSTR_SIGNER_TOO_SLOW" });
+  const CLOCK_SKEW = expect.objectContaining({
+    code: "NOSTR_SIGNER_CLOCK_SKEW",
+  });
   const LIMIT = NIP98_MAX_CLOCK_DRIFT_SECONDS - 5;
 
   beforeEach(() => {
@@ -243,14 +250,14 @@ describe("assertFreshlySigned", () => {
   });
 
   it("rejects an event exactly at the window edge, leaving room for transit", () => {
-    expect(() => assertFreshlySigned(at(LIMIT))).toThrow(/too long/i);
+    expect(() => assertFreshlySigned(at(LIMIT))).toThrow(TOO_SLOW);
   });
 
   it("rejects well before the server's own limit", () => {
     expect(LIMIT).toBeLessThan(NIP98_MAX_CLOCK_DRIFT_SECONDS);
     expect(() =>
       assertFreshlySigned(at(NIP98_MAX_CLOCK_DRIFT_SECONDS - 1)),
-    ).toThrow(/too long/i);
+    ).toThrow(TOO_SLOW);
   });
 
   it("accepts a signer clock one second inside the future window", () => {
@@ -258,15 +265,15 @@ describe("assertFreshlySigned", () => {
   });
 
   it("names the clock, not the approval, when the signer runs ahead", () => {
-    expect(() => assertFreshlySigned(at(-LIMIT))).toThrow(/clock/i);
-    expect(() => assertFreshlySigned(at(-120))).toThrow(/clock/i);
+    expect(() => assertFreshlySigned(at(-LIMIT))).toThrow(CLOCK_SKEW);
+    expect(() => assertFreshlySigned(at(-120))).toThrow(CLOCK_SKEW);
   });
 
   it("rounds the current time to the nearest second", () => {
     vi.setSystemTime(NOW_SECONDS * 1000 + 499);
     expect(assertFreshlySigned(at(LIMIT - 1))).toBeDefined();
     vi.setSystemTime(NOW_SECONDS * 1000 + 500);
-    expect(() => assertFreshlySigned(at(LIMIT - 1))).toThrow(/too long/i);
+    expect(() => assertFreshlySigned(at(LIMIT - 1))).toThrow(TOO_SLOW);
   });
 });
 

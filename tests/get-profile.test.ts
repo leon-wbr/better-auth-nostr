@@ -104,8 +104,10 @@ describe("client getProfile", () => {
     const result = await actions.nostr.getProfile(makeKeypair().publicKey);
 
     expect(result.data).toBeNull();
-    expect(result.error?.code).toBe("NOSTR_GET_PROFILE_FAILED");
-    expect(result.error?.message).toMatch(/relays/);
+    expect(result.error).toMatchObject({
+      code: "NOSTR_RELAYS_NOT_CONFIGURED",
+      status: 400,
+    });
     expect(relay.calls).toHaveLength(0);
   });
 
@@ -114,6 +116,9 @@ describe("client getProfile", () => {
     const result = await actions.nostr.getProfile("nonsense");
 
     expect(result.data).toBeNull();
-    expect(result.error?.code).toBe("NOSTR_GET_PROFILE_FAILED");
+    expect(result.error).toMatchObject({
+      code: "NOSTR_UNKNOWN_ERROR",
+      status: 400,
+    });
   });
 });

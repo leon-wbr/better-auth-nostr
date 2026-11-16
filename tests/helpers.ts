@@ -140,9 +140,9 @@ export const createTestFetch = (
       return {
         data: null,
         error: {
+          ...data,
           status: response.status,
           statusText: response.statusText,
-          message: data?.message ?? response.statusText,
         },
       };
     }
