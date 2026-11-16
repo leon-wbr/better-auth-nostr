@@ -19,6 +19,20 @@ const isDate = (key: string): boolean =>
     (dateKey) => dateKey.toLowerCase() === key.toLowerCase(),
   );
 
+const CARD =
+  "min-w-0 p-6 border dark:bg-zinc-900 dark:border-zinc-800 shadow-lg flex flex-col gap-6";
+const SECTION = "flex flex-col gap-4 border-t dark:border-zinc-800 pt-4";
+const HEADING = "text-base text-zinc-700 dark:text-zinc-300";
+const LABEL = "text-sm text-zinc-700 dark:text-zinc-300";
+const HINT = "text-sm text-zinc-500";
+const INPUT =
+  "px-2 py-1 border border-zinc-300 text-zinc-900 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100 text-sm";
+const OK = "text-emerald-700 dark:text-emerald-400";
+const TOGGLE =
+  "px-3 py-1 text-sm font-semibold tracking-widest border rounded uppercase";
+const TOGGLE_OFF =
+  "bg-transparent border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400 hover:border-zinc-500";
+
 type LinkedPubkey = {
   id: string;
   name: string | null;
@@ -55,30 +69,28 @@ function RecursiveEntry({ value }: { value: any }) {
       );
     }
 
-    const cellClassName = (includePadding: boolean) =>
-      `${includePadding ? "p-3" : ""} text-zinc-400 whitespace-nowrap align-top bg-zinc-800 hover:bg-zinc-700 transition-colors`;
+    const cell =
+      "wrap-anywhere align-top bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 transition-colors";
 
-    // Render object as a grid
     return (
-      <div className="inline-grid grid-cols-[minmax(120px,auto)_minmax(0,1fr)] text-xs min-w-0 w-full max-w-ful">
-        {Object.entries(value).map(([k, v]) => (
-          <div key={k} className="contents">
-            <div className={cellClassName(true)}>
-              {k.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()}
+      <div className="inline-grid grid-cols-[minmax(120px,auto)_minmax(0,1fr)] min-w-0 w-full">
+        {Object.entries(value).map(([k, v]) => {
+          const nested = typeof v === "object" && v !== null && !isDate(k);
+          return (
+            <div key={k} className="contents">
+              <div className={`p-3 ${nested ? "col-span-2" : ""} ${cell}`}>
+                {k.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()}
+              </div>
+              <div className={`${nested ? "col-span-2 pl-3" : "p-3"} ${cell}`}>
+                {!isDate(k) ? (
+                  <RecursiveEntry value={v} />
+                ) : (
+                  new Date(v as string).toString()
+                )}
+              </div>
             </div>
-            <div
-              className={cellClassName(
-                typeof v !== "object" || v === null || isDate(k),
-              )}
-            >
-              {!isDate(k) ? (
-                <RecursiveEntry value={v} />
-              ) : (
-                new Date(v as string).toString()
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     );
   }
@@ -105,8 +117,8 @@ function Status({
   if (!status) return null;
   return (
     <p
-      className={`text-[11px] font-mono break-all ${
-        status.ok ? "text-emerald-400" : "text-red-400"
+      className={`text-sm font-mono break-all ${
+        status.ok ? OK : "text-red-700 dark:text-red-400"
       } whitespace-pre-wrap`}
     >
       {status.message}
@@ -125,7 +137,7 @@ function NsecField({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={id} className="text-xs text-zinc-300">
+      <label htmlFor={id} className={LABEL}>
         Private key
       </label>
       <div className="flex gap-2">
@@ -135,19 +147,17 @@ function NsecField({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder="nsec1... or 64-char hex"
-          className="flex-1 px-2 py-1 border dark:bg-zinc-800 dark:border-zinc-700 text-zinc-100 text-xs"
+          className={`min-w-0 flex-1 ${INPUT}`}
         />
         <button
           type="button"
           onClick={() => onChange(nip19.nsecEncode(generateSecretKey()))}
-          className="px-3 py-1 text-[10px] font-semibold tracking-widest border rounded uppercase bg-transparent border-zinc-700 text-zinc-400 hover:border-zinc-500"
+          className={`${TOGGLE} ${TOGGLE_OFF}`}
         >
           Generate
         </button>
       </div>
-      <p className="text-[10px] text-zinc-500">
-        Your key stays in the browser for this session.
-      </p>
+      <p className={HINT}>Your key stays in the browser for this session.</p>
     </div>
   );
 }
@@ -175,10 +185,10 @@ function MethodToggle({
           key={option.value}
           type="button"
           onClick={() => onChange(option.value)}
-          className={`px-3 py-1 text-[10px] font-semibold tracking-widest border rounded uppercase ${
+          className={`${TOGGLE} ${
             value === option.value
               ? "bg-zinc-800 border-zinc-600 text-white"
-              : "bg-transparent border-zinc-700 text-zinc-400 hover:border-zinc-500"
+              : TOGGLE_OFF
           }`}
         >
           {option.label}
@@ -199,7 +209,7 @@ function BunkerField({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor={id} className="text-xs text-zinc-300">
+      <label htmlFor={id} className={LABEL}>
         Bunker URI
       </label>
       <input
@@ -208,9 +218,9 @@ function BunkerField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder="bunker://… or you@example.com"
-        className="px-2 py-1 border dark:bg-zinc-800 dark:border-zinc-700 text-zinc-100 text-xs"
+        className={INPUT}
       />
-      <p className="text-[10px] text-zinc-500">
+      <p className={HINT}>
         Paste the connection string from nsec.app, Amber, or nsecbunker. Your
         key never leaves the signer.
       </p>
@@ -223,7 +233,7 @@ function BunkerField({
 function ConnectUri({ uri }: { uri: string | null }) {
   if (!uri) {
     return (
-      <p className="text-[10px] text-zinc-500">
+      <p className={HINT}>
         Starts a nostrconnect:// session and waits for a remote signer to
         approve it.
       </p>
@@ -231,10 +241,10 @@ function ConnectUri({ uri }: { uri: string | null }) {
   }
   return (
     <div className="flex flex-col gap-1">
-      <p className="text-[10px] text-zinc-500">
-        Scan or paste this into your signer, then approve:
-      </p>
-      <code className="text-[10px] text-emerald-400 break-all border dark:border-zinc-700 p-2">
+      <p className={HINT}>Scan or paste this into your signer, then approve:</p>
+      <code
+        className={`text-sm ${OK} break-all border dark:border-zinc-700 p-2`}
+      >
         {uri}
       </code>
     </div>
@@ -410,96 +420,98 @@ export default function Home() {
   };
 
   return (
-    <div className="dark:bg-zinc-900 p-6 border dark:border-zinc-800 shadow-lg max-w-5xl min-w-sm flex flex-col gap-6">
+    <main className="mx-auto max-w-6xl p-4 sm:py-8 grid gap-6 items-start lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
       {session ? (
         <>
-          <div className="flex flex-col gap-2">
-            <h2 className="text-xs text-zinc-300">Session</h2>
-            <div className="font-mono text-xs overflow-x-auto">
-              <RecursiveEntry value={session} />
+          <div className={CARD}>
+            <div className="flex flex-col gap-4">
+              <h2 className={HEADING}>Session</h2>
+              <div className="font-mono text-sm">
+                <RecursiveEntry value={session} />
+              </div>
+              <Button
+                className="self-start bg-red-600 text-white hover:bg-red-700"
+                onClick={signOut}
+              >
+                Logout
+              </Button>
             </div>
-            <Button
-              className="bg-red-600 text-white hover:bg-red-700"
-              onClick={signOut}
-            >
-              Logout
-            </Button>
+
+            <div className={SECTION}>
+              <h2 className={HEADING}>Linked pubkeys ({linked.length})</h2>
+              <ul className="font-mono text-sm text-zinc-600 dark:text-zinc-400 flex flex-col gap-1">
+                {linked.map((pubkey) => (
+                  <li key={pubkey.id} className="break-all">
+                    {pubkey.publicKey}
+                    {pubkey.name ? ` — ${pubkey.name}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-2 border-t dark:border-zinc-800 pt-4">
-            <h2 className="text-xs text-zinc-300">
-              Linked pubkeys ({linked.length})
-            </h2>
-            <ul className="font-mono text-[11px] text-zinc-400 flex flex-col gap-1">
-              {linked.map((pubkey) => (
-                <li key={pubkey.id} className="break-all">
-                  {pubkey.publicKey}
-                  {pubkey.name ? ` — ${pubkey.name}` : ""}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="flex flex-col gap-4 border-t dark:border-zinc-800 pt-4">
-            <h2 className="text-xs text-zinc-300">Link another pubkey</h2>
-            {link.fields}
-            <div className="flex flex-col gap-2">
-              <label htmlFor="link-name" className="text-xs text-zinc-300">
-                Label (optional)
-              </label>
-              <input
-                id="link-name"
-                type="text"
-                value={linkName}
-                onChange={(event) => setLinkName(event.target.value)}
-                placeholder="e.g. phone signer"
-                className="px-2 py-1 border dark:bg-zinc-800 dark:border-zinc-700 text-zinc-100 text-xs"
-              />
+          <div className={CARD}>
+            <div className="flex flex-col gap-4">
+              <h2 className={HEADING}>Link another pubkey</h2>
+              {link.fields}
+              <div className="flex flex-col gap-2">
+                <label htmlFor="link-name" className={LABEL}>
+                  Label (optional)
+                </label>
+                <input
+                  id="link-name"
+                  type="text"
+                  value={linkName}
+                  onChange={(event) => setLinkName(event.target.value)}
+                  placeholder="e.g. phone signer"
+                  className={INPUT}
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={handleAddPubkey}
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                Link pubkey
+              </Button>
+              <Status status={link.status} />
             </div>
-            <Button
-              type="button"
-              onClick={handleAddPubkey}
-              className="bg-emerald-600 text-white hover:bg-emerald-700"
-            >
-              Link pubkey
-            </Button>
-            <Status status={link.status} />
-          </div>
 
-          <div className="flex flex-col gap-4 border-t dark:border-zinc-800 pt-4">
-            <h2 className="text-xs text-zinc-300">Sign a note</h2>
-            <p className="text-[10px] text-zinc-500">
-              Signs a kind 1 event with <code>authClient.nostr.signEvent</code>{" "}
-              using the same signer choices as sign-in. Nothing is sent to the
-              server or published. A remote signer is asked for{" "}
-              <code>sign_event:1</code>.
-            </p>
-            {sign.fields}
-            <div className="flex flex-col gap-2">
-              <label htmlFor="note-content" className="text-xs text-zinc-300">
-                Note
-              </label>
-              <textarea
-                id="note-content"
-                value={noteContent}
-                onChange={(event) => setNoteContent(event.target.value)}
-                rows={3}
-                className="px-2 py-1 border dark:bg-zinc-800 dark:border-zinc-700 text-zinc-100 text-xs"
-              />
+            <div className={SECTION}>
+              <h2 className={HEADING}>Sign a note</h2>
+              <p className={HINT}>
+                Signs a kind 1 event with{" "}
+                <code>authClient.nostr.signEvent</code> using the same signer
+                choices as sign-in. Nothing is sent to the server or published.
+                A remote signer is asked for <code>sign_event:1</code>.
+              </p>
+              {sign.fields}
+              <div className="flex flex-col gap-2">
+                <label htmlFor="note-content" className={LABEL}>
+                  Note
+                </label>
+                <textarea
+                  id="note-content"
+                  value={noteContent}
+                  onChange={(event) => setNoteContent(event.target.value)}
+                  rows={3}
+                  className={INPUT}
+                />
+              </div>
+              <Button
+                type="button"
+                onClick={handleSignNote}
+                className="bg-emerald-600 text-white hover:bg-emerald-700"
+              >
+                Sign note
+              </Button>
+              <Status status={sign.status} />
             </div>
-            <Button
-              type="button"
-              onClick={handleSignNote}
-              className="bg-emerald-600 text-white hover:bg-emerald-700"
-            >
-              Sign note
-            </Button>
-            <Status status={sign.status} />
           </div>
         </>
       ) : (
-        <form className="flex flex-col gap-4">
-          <h2 className="text-xs text-zinc-300">Login with Nostr</h2>
+        <form className={`${CARD} w-full max-w-xl mx-auto lg:col-span-2`}>
+          <h2 className={HEADING}>Login with Nostr</h2>
           {login.fields}
           <Button
             type="button"
@@ -511,6 +523,6 @@ export default function Home() {
           <Status status={login.status} />
         </form>
       )}
-    </div>
+    </main>
   );
 }
