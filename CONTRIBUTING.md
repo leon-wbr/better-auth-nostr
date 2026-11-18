@@ -42,6 +42,15 @@ npm run ci:local    # lint + typecheck + tests with coverage thresholds + build
 
 GitHub Actions runs the same `npm run ci:local` on every pull request that isn't a draft. `npm run check` is the same without the build. The coverage thresholds live in `vitest.config.ts`, so a change that drops coverage below them fails the gate.
 
+`tests/adapters.test.ts` runs the database-dependent guarantees (single-use nonces, unique pubkeys) against the memory adapter, SQLite (`node:sqlite`) and, when `POSTGRES_URL` is set, Postgres. To include Postgres locally:
+
+```bash
+docker run --rm -d --name ban-pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:17
+POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres npm test
+```
+
+The `Matrix` workflow runs tests, coverage and build on Node 22 and 24 with Better Auth 1.7.0 and the latest release, and the adapter suite against a Postgres service.
+
 `npm run mutate` runs Stryker over `src/routes.ts` and `src/signer.ts`, where a flipped comparison is a security bug that line coverage can't see. It takes a few minutes, so it runs on demand, not in CI; the HTML report lands in `reports/stryker/`. When you change the NIP-98 checks or the signers, run it and don't let the score drop. `stryker.config.ts` is typed with `PartialStrykerOptions` and loaded through Node’s native type stripping (Node 22.18+). The script passes its filename explicitly because Stryker 10 does not auto-discover TypeScript configs. It points `tsconfigFile` at a file that doesn't exist on purpose: Stryker's tsconfig preprocessor calls a TypeScript API that TypeScript 7 no longer has.
 
 ## Pull requests
