@@ -416,31 +416,41 @@ export const addPubkey = (_opts?: NostrOptions) =>
       const { session } = ctx.context;
       const signer = await verifyNip98Request(ctx, NOSTR_PATHS.addPubkey);
 
-      const existing = await findPubkeyRow(ctx, signer);
+      const linked = (pubkey: NostrPubkey) => {
+        if (pubkey.userId !== session.user.id) {
+          throw APIError.from(
+            "CONFLICT",
+            NOSTR_ERROR_CODES.NOSTR_PUBKEY_LINKED_TO_OTHER_USER,
+          );
+        }
+        return ctx.json({ pubkey }, { status: 200 });
+      };
 
-      if (existing && existing.userId !== session.user.id) {
-        throw APIError.from(
-          "CONFLICT",
-          NOSTR_ERROR_CODES.NOSTR_PUBKEY_LINKED_TO_OTHER_USER,
-        );
-      }
-      if (existing) {
-        return ctx.json({ pubkey: existing }, { status: 200 });
-      }
+      const existing = await findPubkeyRow(ctx, signer);
+      if (existing) return linked(existing);
 
       const pubkey = await guardStorage(
         ctx,
         NOSTR_ERROR_CODES.NOSTR_FAILED_TO_CREATE_PUBKEY,
-        () =>
-          ctx.context.adapter.create<NostrPubkey>({
-            model: MODEL,
-            data: {
-              publicKey: signer,
-              userId: session.user.id,
-              name: ctx.body.name,
-              createdAt: new Date(),
-            },
-          }),
+        async () => {
+          try {
+            return await ctx.context.adapter.create<NostrPubkey>({
+              model: MODEL,
+              data: {
+                publicKey: signer,
+                userId: session.user.id,
+                name: ctx.body.name,
+                createdAt: new Date(),
+              },
+            });
+          } catch (error) {
+            // A concurrent add of the same pubkey fails here on the unique
+            // index; the loser answers as if it had come second.
+            const winner = await findPubkeyRow(ctx, signer);
+            if (winner) return winner;
+            throw error;
+          }
+        },
       );
       if (!pubkey) {
         throw APIError.from(
@@ -448,7 +458,6 @@ export const addPubkey = (_opts?: NostrOptions) =>
           NOSTR_ERROR_CODES.NOSTR_FAILED_TO_CREATE_PUBKEY,
         );
       }
-
-      return ctx.json({ pubkey }, { status: 200 });
+      return linked(pubkey);
     },
   );
