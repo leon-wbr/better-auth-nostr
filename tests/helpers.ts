@@ -20,15 +20,20 @@ export const createTestAuth = (
   {
     user,
     databaseHooks,
+    rateLimit,
     db = createMemoryDb(options?.modelName ?? "nostrPubkey"),
     database = memoryAdapter(db),
-  }: Pick<BetterAuthOptions, "user" | "databaseHooks" | "database"> & {
+  }: Pick<
+    BetterAuthOptions,
+    "user" | "databaseHooks" | "database" | "rateLimit"
+  > & {
     db?: MemoryDB;
   } = {},
 ) => {
   return betterAuth({
     user,
     databaseHooks,
+    rateLimit,
     baseURL: TEST_ORIGIN,
     secret: "test-secret-do-not-use-in-production",
     database,

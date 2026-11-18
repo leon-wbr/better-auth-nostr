@@ -138,7 +138,9 @@ Each login request carries a nonce in both the signed NIP-98 payload and the JSO
 
 Because the signed event is bound to the endpoint URL, the client has to sign against `baseURL + basePath` — the same URL the server validates against. If you mount Better Auth somewhere other than the default `/api/auth`, pass `basePath` to `createAuthClient` so the two agree.
 
-Set `baseURL` on the server as well. The event is validated against `ctx.context.baseURL`, and when that is neither configured nor supplied through `BETTER_AUTH_URL`, Better Auth derives it from the incoming request — which means a `Host` header an attacker controls decides the URL the signature is checked against. Configuring `baseURL` is what makes that binding meaningful behind a proxy.
+Set `baseURL` on the server as well. The event is validated against `ctx.context.baseURL`, and when that is neither configured nor supplied through `BETTER_AUTH_URL`, Better Auth derives it from the incoming request — which means a `Host` header an attacker controls decides the URL the signature is checked against. Configuring `baseURL` is what makes that binding meaningful behind a proxy. Without `baseURL` or `BETTER_AUTH_URL` the plugin warns at startup, and in production (`NODE_ENV=production`) it refuses to start unless you pass `allowDynamicBaseURL: true`. A dynamic `baseURL` with `allowedHosts` counts as configured.
+
+The three endpoints carry their own rate limits, in the style of Better Auth's magic-link and phone-number plugins: `/nostr/nonce` 10 requests per 60 seconds, `/nostr/login` 3 per 10 seconds (Better Auth's sign-in limit) and `/nostr/add-pubkey` 5 per 60 seconds, per client IP. They apply wherever Better Auth's rate limiter is on, which by default is production only. Override them with `rateLimit: { nonce: { window: 60, max: 20 } }`, or turn one off with Better Auth's `rateLimit.customRules`.
 
 ### Signing other events
 
@@ -237,6 +239,8 @@ Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerific
 | `relayTimeoutMs`           | How long to wait on relays, in milliseconds. Defaults to 5000.                                                                    |
 | `mapProfileToUser`         | Map the profile to user fields, sync or async. The result is spread over the default mapping; extra keys go to additional fields. |
 | `overrideUserInfoOnSignIn` | Also refresh an existing user from their profile on every sign-in, not only at sign-up. Needs `relays`. Defaults to `false`.        |
+| `rateLimit`                | Per-endpoint `{ window, max }` for `nonce`, `login` and `addPubkey`, in seconds and requests. Defaults: 10/60s, 3/10s and 5/60s.          |
+| `allowDynamicBaseURL`      | Start in production without `baseURL` or `BETTER_AUTH_URL`, binding signatures to each request's `Host`. Defaults to `false`.      |
 
 ### Filling the user from the Nostr profile
 
