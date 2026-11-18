@@ -1,6 +1,6 @@
 # Manual signer checklist
 
-CI proves the server side on every runtime and database, but no CI job can approve a request in a browser extension or on a phone. Before each release candidate, a person runs this checklist against [`examples/react`](../examples/react) and records the result in the release PR.
+CI proves the server side on every runtime and database, but no CI job can approve a request in a browser extension or on a phone. Before each release candidate, a person runs this checklist against [`examples/react`](https://github.com/leon-wbr/better-auth-nostr/tree/main/examples/react) and records the result in the release PR.
 
 ## Setup
 

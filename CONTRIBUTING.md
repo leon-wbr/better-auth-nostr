@@ -7,7 +7,7 @@ Thanks for looking. Every kind of help counts here, and most of it needs no code
 - **Tell us you use it.** An issue or a note saying "we run this in production with X" helps more than you might think: it shows which setups matter and gives others confidence.
 - **Report a bug.** Open an [issue](https://github.com/leon-wbr/better-auth-nostr/issues) with what you did, what you expected and what happened. The versions of `better-auth-nostr`, `better-auth` and `nostr-tools`, your runtime (Node, Bun, Deno, a browser, Workers) and your database adapter make it much easier to reproduce.
 - **Try it with your signer.** Logins go through browser extensions (NIP-07) and remote signers (NIP-46) such as Amber, nsec.app and nsecbunker, and each one behaves a little differently. Telling us which signers work, which don't and how they fail is some of the most useful testing there is.
-- **Improve the docs.** A confusing sentence in the README, a missing example or a setup step that tripped you up are all worth a pull request or an issue. Small fixes are as welcome as big ones.
+- **Improve the docs.** A confusing sentence in the README or the [docs](https://leon-wbr.github.io/better-auth-nostr/) (sources in `docs/`), a missing example or a setup step that tripped you up are all worth a pull request or an issue. Small fixes are as welcome as big ones.
 - **Share an example.** A minimal app using the plugin with your framework or adapter helps the next person. `examples/react` shows the shape.
 - **Suggest a feature.** Open an issue describing the problem you want solved before the solution you have in mind; there may be a simpler way, or a NIP that already covers it.
 - **Answer questions.** If you know the answer to someone's issue, jump in.
@@ -57,7 +57,7 @@ The `Matrix` workflow runs tests, coverage and build on Node 22 and 24 with Bett
 
 - Keep a pull request to one change. Several small ones are easier to review than one large one.
 - Add or update a test for a behaviour change or a bug fix. A failing test that shows the bug is a good first commit.
-- Update the README when you change the public API or an option.
+- Document an export or option in its JSDoc (defaults as `@defaultValue`), then run `npm run docs:generate` and commit the result. It writes `docs/api/` with TypeDoc, and the error-code and schema tables in `docs/reference.md` and the support matrix in `docs/support.md` with `scripts/docs/generate.ts`; CI fails when they are out of date. A new error code needs its status, cause and fix in `scripts/docs/error-codes.ts`, or typecheck fails. Endpoints and client actions are written by hand in `docs/reference.md`, and `tests/docs.test.ts` fails when one is missing. The docs are published from `docs/` on `main` by GitHub Pages' built-in Jekyll, which evaluates `{{` and `{%` even in code blocks, so the test rejects them too.
 - Commit messages and pull request titles follow [Conventional Commits](https://www.conventionalcommits.org/): `fix:`, `feat:`, `docs:`, `test:`, `chore:` and so on. Pull requests are squash-merged, so the title becomes the commit on `main`.
 - Draft pull requests are fine for early feedback; CI skips them until they are ready for review.
 

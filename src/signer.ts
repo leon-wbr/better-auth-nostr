@@ -21,10 +21,9 @@ import { NOSTR_ERROR_CODES, NostrClientError } from "./error-codes";
 
 /**
  * Anything that can hand out a public key and sign an event: a local secret
- * key, a NIP-07 extension, or a NIP-46 remote signer. Deliberately wider than
- * `Signer` from `nostr-tools/signer` (which returns `VerifiedEvent`) so that
- * arbitrary caller-supplied signers fit; the assertion below keeps the two
- * compatible in the direction that matters.
+ * key, a NIP-07 extension, or a NIP-46 remote signer. Every `Signer` from
+ * `nostr-tools/signer` is one; this type is wider (it doesn't require a
+ * `VerifiedEvent`) so that any caller-supplied signer fits.
  */
 export interface NostrSigner {
   getPublicKey(): Promise<string>;
@@ -105,6 +104,7 @@ export const withTimeout = async <T>(
   }
 };
 
+/** Decodes a bech32 nsec or hex secret key; throws on anything else. */
 export const parseSecretKey = (input: string): Uint8Array => {
   const trimmed = input.trim();
   if (!trimmed) throw new Error("Missing NSEC private key");
@@ -139,7 +139,7 @@ const getExtension = (): WindowNostr | null => {
   return ext && typeof ext.signEvent === "function" ? ext : null;
 };
 
-/** Signs through a NIP-07 browser extension, if one is installed. */
+/** Signs through the NIP-07 extension at `window.nostr`; `null` without one. */
 export const createExtensionSigner = (): NostrSigner | null => {
   const ext = getExtension();
   if (!ext) return null;
@@ -149,12 +149,20 @@ export const createExtensionSigner = (): NostrSigner | null => {
   };
 };
 
+/**
+ * Which signer `signIn.nostr`, `nostr.addPubkey` and `nostr.signEvent` use.
+ * Without `signer` or `nsec`, the NIP-07 extension at `window.nostr` signs.
+ */
 export type SignerSource = {
-  /** Any signer: a bunker session, a hardware signer, a test double. */
+  /** Any `NostrSigner`: a bunker session, a hardware signer, a test double. Wins over `nsec`. */
   signer?: NostrSigner;
-  /** Bech32 nsec or 64-char hex secret. */
+  /** A bech32 nsec or 64-character hex secret key. Used when no `signer` is given. */
   nsec?: string;
-  /** How long to wait for a signature before failing. */
+  /**
+   * How long to wait for the signer before failing with `NOSTR_SIGNER_TIMEOUT`.
+   *
+   * @defaultValue 300000 (5 minutes)
+   */
   timeoutMs?: number;
 };
 
@@ -172,27 +180,40 @@ export const resolveSigner = (source?: SignerSource): NostrSigner => {
 
 type RemoteTransportOptions = {
   /**
-   * Client-side key used to talk to the remote signer. Persist it with
-   * `signer.bunkerUri` to resume a session without a fresh approval prompt.
+   * The client-side key that talks to the remote signer. Pass the persisted
+   * one, with `signer.bunkerUri`, to resume a session without a new approval prompt.
+   *
+   * @defaultValue a new key
    */
   clientSecretKey?: Uint8Array;
   /** Called with a URL the user must open to approve the connection. */
   onAuthUrl?: (url: string) => void;
-  /** NIP-46 permissions to request. Defaults to signing NIP-98 events only. */
+  /**
+   * NIP-46 permissions to request. The default only covers sign-in.
+   *
+   * @defaultValue ["sign_event:27235"]
+   */
   perms?: string[];
-  /** Shown to the user by the remote signer while approving. */
+  /** `name`, `url` and `image` the remote signer shows while approving. */
   metadata?: ClientMetadata;
   /**
-   * Relay pool to use. When omitted we open one and close it in `close()`;
-   * when supplied, its lifetime stays yours.
+   * A `nostr-tools` relay pool. One you pass stays open on `close()`; one
+   * opened for you is closed.
+   *
+   * @defaultValue a new pool
    */
   pool?: AbstractSimplePool;
 };
 
-export type BunkerSignerOptions = RemoteTransportOptions & {
-  /** How long to wait for the connection to be approved. */
+/** Options of `createBunkerSigner`. */
+export interface BunkerSignerOptions extends RemoteTransportOptions {
+  /**
+   * How long to wait for the connection to be approved.
+   *
+   * @defaultValue 300000 (5 minutes)
+   */
   timeoutMs?: number;
-};
+}
 
 const wrapBunker = (
   signer: BunkerSigner,
@@ -277,13 +298,23 @@ export const createBunkerSigner = async (
   return wrapBunker(signer, clientSecretKey, ownedPool);
 };
 
-export type NostrConnectOptions = RemoteTransportOptions & {
-  /** Relays the remote signer should answer on. */
+/** Options of `createNostrConnectSession`. */
+export interface NostrConnectOptions extends RemoteTransportOptions {
+  /**
+   * Relays the remote signer should answer on.
+   *
+   * @defaultValue ["wss://relay.nsec.app"]
+   */
   relays?: string[];
-  /** Connection secret. Generated when omitted. */
+  /**
+   * The connection secret in the URI.
+   *
+   * @defaultValue random
+   */
   secret?: string;
-};
+}
 
+/** A `nostrconnect://` URI plus `connect()`, from `createNostrConnectSession`. */
 export type NostrConnectSession = {
   /** Show this to the user as a QR code or a copyable link. */
   uri: string;

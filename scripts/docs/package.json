@@ -1,0 +1,14 @@
+{
+  "name": "better-auth-nostr-docs",
+  "private": true,
+  "description": "Generates docs/api and the generated tables in docs/reference.md and docs/support.md. TypeDoc needs TypeScript 6, the root uses 7, so it lives in its own workspace.",
+  "type": "module",
+  "scripts": {
+    "generate": "typedoc && node generate.ts"
+  },
+  "devDependencies": {
+    "typedoc": "^0.28.20",
+    "typedoc-plugin-markdown": "^4.14.1",
+    "typescript": "~6.0.0"
+  }
+}

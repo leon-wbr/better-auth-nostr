@@ -32,6 +32,7 @@ export const NOSTR_ERROR_CODES = defineErrorCodes({
   NOSTR_UNKNOWN_ERROR: "Nostr action failed",
 });
 
+/** A key of `NOSTR_ERROR_CODES`. */
 export type NostrErrorCode = keyof typeof NOSTR_ERROR_CODES;
 
 /** A client-side failure the actions report with its own code. */

@@ -1,3 +1,7 @@
+/**
+ * The server plugin, imported from `better-auth-nostr`.
+ * @module better-auth-nostr
+ */
 import { isProduction } from "@better-auth/core/env";
 import { BetterAuthError, type BetterAuthPlugin } from "better-auth";
 import { NOSTR_PATHS } from "./endpoints";
@@ -23,9 +27,11 @@ const DEFAULT_RATE_LIMITS = {
 const MISSING_BASE_URL =
   "NIP-98 signatures are checked against the server's URL, and no baseURL is configured, so it is derived from the request's Host header. Set baseURL or BETTER_AUTH_URL, or pass allowDynamicBaseURL: true to the nostr plugin to accept that.";
 
+/** The server plugin. */
 export const nostr = (options?: NostrOptions) => {
   return {
     id: "nostr",
+    /** @hidden */
     init(ctx) {
       if (!ctx.options.baseURL && !options?.allowDynamicBaseURL) {
         if (isProduction) throw new BetterAuthError(MISSING_BASE_URL);
@@ -58,6 +64,7 @@ export const nostr = (options?: NostrOptions) => {
         },
       };
     },
+    /** @hidden */
     endpoints: {
       getNostrNonce: getNostrNonce(options),
       loginNostr: loginNostr(options),
@@ -66,6 +73,7 @@ export const nostr = (options?: NostrOptions) => {
       updatePubkey: updatePubkey(options),
       removePubkey: removePubkey(options),
     },
+    /** @hidden */
     schema: {
       nostrPubkey: {
         modelName: options?.modelName ?? "nostrPubkey",
@@ -102,6 +110,7 @@ export const nostr = (options?: NostrOptions) => {
         },
       },
     },
+    /** @hidden */
     rateLimit: (
       Object.keys(DEFAULT_RATE_LIMITS) as (keyof typeof DEFAULT_RATE_LIMITS)[]
     ).map((endpoint) => ({
@@ -109,6 +118,7 @@ export const nostr = (options?: NostrOptions) => {
       ...DEFAULT_RATE_LIMITS[endpoint],
       ...options?.rateLimit?.[endpoint],
     })),
+    /** @hidden */
     $ERROR_CODES: NOSTR_ERROR_CODES,
   } satisfies BetterAuthPlugin;
 };

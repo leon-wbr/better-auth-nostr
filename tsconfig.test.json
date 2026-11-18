@@ -8,5 +8,10 @@
     "noEmit": true,
     "customConditions": []
   },
-  "include": ["./src", "./tests", "./stryker.config.ts"]
+  "include": [
+    "./src",
+    "./tests",
+    "./stryker.config.ts",
+    "./scripts/docs/error-codes.ts"
+  ]
 }

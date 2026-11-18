@@ -1,3 +1,7 @@
+/**
+ * The client plugin and signers, imported from `better-auth-nostr/client`.
+ * @module better-auth-nostr/client
+ */
 import type {
   BetterAuthClientOptions,
   BetterAuthClientPlugin,
@@ -133,6 +137,7 @@ const signVerified = async (
   return fresh;
 };
 
+/** Builds the actions `nostrClient` installs; for wiring them into a custom client. */
 export const getNostrActions = (
   $fetch: BetterFetch,
   { $store }: { $store: ClientStore },
@@ -258,7 +263,10 @@ export const getNostrActions = (
    */
   const getProfile = async (
     input: string,
-    callOptions?: { timeoutMs?: number },
+    callOptions?: {
+      /** Overrides `relayTimeoutMs` for this call. */
+      timeoutMs?: number;
+    },
   ): Promise<ActionResult<NostrProfile | null>> => {
     try {
       if (!relayOptions.relays?.length) {
@@ -298,14 +306,18 @@ type NostrClientActions<O extends RelayOptions> = O extends {
       nostr: Omit<NostrActions["nostr"], "getProfile">;
     };
 
+/** The client plugin. Its options are `RelayOptions`. */
 export const nostrClient = <O extends RelayOptions = RelayOptions>(
   relayOptions?: O,
 ) => {
   return {
     id: "nostr",
+    /** @hidden */
     $InferServerPlugin: {} as ReturnType<typeof nostr>,
+    /** @hidden */
     getActions: ($fetch, $store, options): NostrClientActions<O> =>
       getNostrActions($fetch, { $store }, options, relayOptions),
+    /** @hidden */
     pathMethods: {
       [NOSTR_PATHS.nonce]: "POST",
       [NOSTR_PATHS.login]: "POST",
@@ -314,6 +326,7 @@ export const nostrClient = <O extends RelayOptions = RelayOptions>(
       [NOSTR_PATHS.updatePubkey]: "POST",
       [NOSTR_PATHS.removePubkey]: "POST",
     },
+    /** @hidden */
     $ERROR_CODES: NOSTR_ERROR_CODES,
   } satisfies BetterAuthClientPlugin;
 };
