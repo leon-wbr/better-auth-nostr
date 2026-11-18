@@ -42,7 +42,7 @@ npx auth@latest migrate    # Kysely adapter: applies the change
 npx auth@latest generate   # Prisma or Drizzle: writes the schema for your own migration
 ```
 
-Each linked key is also registered as an `account` row with `providerId: "nostr"`, so Better Auth's own account APIs see it. Upgrading an install that already has linked keys? Run the [account backfill](account-backfill.md) once after migrating.
+Each linked key is also registered as an `account` row with `providerId: "nostr"`, so Better Auth's own account APIs see it. Keys linked by an older version get theirs on the user's next sign-in; see [the guide](guide.md#managing-linked-keys) before upgrading to 1.0.
 
 ## 4. Add the client plugin
 

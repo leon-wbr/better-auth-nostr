@@ -58,7 +58,7 @@ An admin can't sign with a user's key, so they can't link a new key for them: li
 
 `nostr.removePubkey` refuses with `NOSTR_CANNOT_REMOVE_LAST_PUBKEY` when the key's own `account` row is the user's only one. Better Auth's `unlinkAccount` applies the same rule to Nostr accounts. Any other `account` row counts: another Nostr key, email and password, a social login. Set `account.accountLinking.allowUnlinkingAll` to turn the rule off, for both.
 
-The rule protects against accidents, not attackers: a user can't strand themselves by removing their only key, but it does nothing against someone who holds a stolen key. It also only sees keys that have an `account` row. On an install that linked keys before the plugin wrote those rows, run the [account backfill](account-backfill.md), or removing a key will be refused even though the user has others.
+The rule protects against accidents, not attackers: a user can't strand themselves by removing their only key, but it does nothing against someone who holds a stolen key. It also only sees keys that have an `account` row. On an install that linked keys before the plugin wrote those rows, it [creates them](guide.md#managing-linked-keys) before removing a key, so the rule counts every key.
 
 ## Where the protocol is heading
 

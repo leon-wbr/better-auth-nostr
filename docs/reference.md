@@ -189,4 +189,4 @@ The plugin adds one model, `nostrPubkey` (renamed with `modelName`). Each row li
 
 <!-- /generated:schema -->
 
-Rename columns with `fields`. Each key also has a row in Better Auth's own `account` table, with `providerId` `"nostr"` and the hex key as `accountId`; installs that linked keys before that need the [account backfill](account-backfill.md). Nonces are kept in Better Auth's `verification` table, under identifiers starting with `nostr:`, and are deleted when used.
+Rename columns with `fields`. Each key also has a row in Better Auth's own `account` table, with `providerId` `"nostr"` and the hex key as `accountId`; keys linked before that get theirs [on the user's next sign-in](guide.md#managing-linked-keys), until 1.0. Nonces are kept in Better Auth's `verification` table, under identifiers starting with `nostr:`, and are deleted when used.

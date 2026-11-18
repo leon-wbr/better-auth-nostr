@@ -197,7 +197,7 @@ Every linked key is also an `account` row with `providerId: "nostr"` and the hex
 - `unlinkAccount` on a Nostr account removes its key as well, and Better Auth's own last-account guard still applies,
 - admin tooling sees a Nostr-only user as having a credential.
 
-Keys linked by a version without this have no account row. Run the [account backfill](account-backfill.md) once after upgrading, or removing a key will count those keys as missing. What to do when a user loses a key is in [Key loss and recovery](key-loss.md).
+Keys linked by a version without this have no account row yet. The plugin creates the missing rows for a user when that user signs in or removes a key, so there is nothing to run. This backfill is temporary and [1.0 removes it](https://github.com/leon-wbr/better-auth-nostr/issues/69): upgrade through a 0.x release with it, or run the SQL in the 1.0 upgrade guide, before moving to 1.0. What to do when a user loses a key is in [Key loss and recovery](key-loss.md).
 
 ### Why baseURL matters
 
