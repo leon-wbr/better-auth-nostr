@@ -17,6 +17,9 @@ export const NOSTR_ERROR_CODES = defineErrorCodes({
   NOSTR_PUBKEY_LINKED_TO_OTHER_USER:
     "Pubkey is already linked to another account",
   NOSTR_FAILED_TO_CREATE_PUBKEY: "Failed to create Nostr pubkey",
+  NOSTR_PUBKEY_NOT_FOUND: "Nostr pubkey not found",
+  NOSTR_CANNOT_REMOVE_LAST_PUBKEY:
+    "Cannot remove the last way to sign in to this account",
   NOSTR_NO_SIGNER:
     "No signer available — pass `signer`, pass `nsec`, or install a NIP-07 extension",
   NOSTR_SIGNER_TIMEOUT: "The signer did not respond in time",

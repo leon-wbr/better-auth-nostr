@@ -310,6 +310,9 @@ export const nostrClient = <O extends RelayOptions = RelayOptions>(
       [NOSTR_PATHS.nonce]: "POST",
       [NOSTR_PATHS.login]: "POST",
       [NOSTR_PATHS.addPubkey]: "POST",
+      [NOSTR_PATHS.listPubkeys]: "GET",
+      [NOSTR_PATHS.updatePubkey]: "POST",
+      [NOSTR_PATHS.removePubkey]: "POST",
     },
     $ERROR_CODES: NOSTR_ERROR_CODES,
   } satisfies BetterAuthClientPlugin;

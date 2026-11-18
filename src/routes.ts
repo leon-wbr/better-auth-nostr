@@ -2,6 +2,7 @@ import {
   getCurrentAdapter,
   runWithTransaction,
 } from "@better-auth/core/context";
+import type { DBAdapter } from "@better-auth/core/db/adapter";
 import {
   BASE_ERROR_CODES,
   BetterAuthError,
@@ -12,6 +13,7 @@ import {
 import {
   APIError,
   createAuthEndpoint,
+  freshSessionMiddleware,
   sessionMiddleware,
 } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
@@ -114,6 +116,61 @@ const findPubkeyRow = (ctx: GenericEndpointContext, pubkey: string) =>
     model: MODEL,
     where: [{ field: "publicKey", value: pubkey }],
   });
+
+/** The account row that registers a pubkey with Better Auth's core model. */
+const PROVIDER_ID = "nostr";
+
+/**
+ * Creates the pubkey row and its account row, inside the caller's
+ * transaction when there is one.
+ */
+const createPubkey = async (
+  ctx: GenericEndpointContext,
+  data: Pick<NostrPubkey, "publicKey" | "userId" | "name">,
+) => {
+  const adapter = await getCurrentAdapter(ctx.context.adapter);
+  const row = await adapter.create<NostrPubkey>({
+    model: MODEL,
+    data: { ...data, createdAt: new Date() },
+  });
+  await ctx.context.internalAdapter.createAccount({
+    providerId: PROVIDER_ID,
+    accountId: data.publicKey,
+    userId: data.userId,
+  });
+  return row;
+};
+
+/**
+ * Best effort, so a database that has not been migrated for the column yet
+ * still signs in.
+ */
+const touchPubkey = async (ctx: GenericEndpointContext, id: string) => {
+  try {
+    await ctx.context.adapter.update({
+      model: MODEL,
+      where: [{ field: "id", value: id }],
+      update: { lastUsedAt: new Date() },
+    });
+  } catch (error) {
+    ctx.context.logger.warn("Could not record the pubkey's last use", error);
+  }
+};
+
+/** Keeps the pubkey rows in step when Better Auth deletes a nostr account. */
+export const removePubkeysOfAccount = async (
+  adapter: DBAdapter,
+  account: { providerId: string; accountId: string; userId: string },
+) => {
+  if (account.providerId !== PROVIDER_ID) return;
+  await (await getCurrentAdapter(adapter)).deleteMany({
+    model: MODEL,
+    where: [
+      { field: "publicKey", value: account.accountId },
+      { field: "userId", value: account.userId },
+    ],
+  });
+};
 
 const httpsUrl = z.url({ protocol: /^https$/ });
 
@@ -229,15 +286,10 @@ const signUp = async (
         );
       }
 
-      const adapter = await getCurrentAdapter(ctx.context.adapter);
       const nostrPubkey = await guardStorage(
         ctx,
         NOSTR_ERROR_CODES.NOSTR_FAILED_TO_CREATE_PUBKEY,
-        () =>
-          adapter.create<NostrPubkey>({
-            model: MODEL,
-            data: { publicKey: pubkey, userId: user.id, createdAt: new Date() },
-          }),
+        () => createPubkey(ctx, { publicKey: pubkey, userId: user.id }),
       );
       if (!nostrPubkey) {
         throw APIError.from(
@@ -384,6 +436,7 @@ export const loginNostr = (opts?: NostrOptions) =>
         );
       }
 
+      await touchPubkey(ctx, nostrPubkey.id);
       await setSessionCookie(ctx, { session, user });
       return ctx.json({ session, user }, { status: 200 });
     },
@@ -436,15 +489,13 @@ export const addPubkey = (_opts?: NostrOptions) =>
         NOSTR_ERROR_CODES.NOSTR_FAILED_TO_CREATE_PUBKEY,
         async () => {
           try {
-            return await ctx.context.adapter.create<NostrPubkey>({
-              model: MODEL,
-              data: {
+            return await runWithTransaction(ctx.context.adapter, () =>
+              createPubkey(ctx, {
                 publicKey: signer,
                 userId: session.user.id,
                 name: ctx.body.name,
-                createdAt: new Date(),
-              },
-            });
+              }),
+            );
           } catch (error) {
             // A concurrent add of the same pubkey fails here on the unique
             // index; the loser answers as if it had come second.
@@ -461,5 +512,142 @@ export const addPubkey = (_opts?: NostrOptions) =>
         );
       }
       return linked(pubkey);
+    },
+  );
+
+/** The caller's own pubkey row; another user's looks the same as a missing one. */
+const findOwnPubkey = async (
+  ctx: GenericEndpointContext & { context: { session: { user: User } } },
+  id: string,
+) => {
+  const row = await ctx.context.adapter.findOne<NostrPubkey>({
+    model: MODEL,
+    where: [
+      { field: "id", value: id },
+      { field: "userId", value: ctx.context.session.user.id },
+    ],
+  });
+  if (!row) {
+    throw APIError.from("NOT_FOUND", NOSTR_ERROR_CODES.NOSTR_PUBKEY_NOT_FOUND);
+  }
+  return row;
+};
+
+export const listPubkeys = (_opts?: NostrOptions) =>
+  createAuthEndpoint(
+    NOSTR_PATHS.listPubkeys,
+    {
+      method: "GET",
+      use: [sessionMiddleware],
+      metadata: {
+        openapi: {
+          operationId: "listNostrPubkeys",
+          description: "List the Nostr pubkeys linked to the session user.",
+          responses: { 200: { description: "The user's pubkeys." } },
+        },
+      },
+    },
+    async (ctx) => {
+      const rows = await ctx.context.adapter.findMany<NostrPubkey>({
+        model: MODEL,
+        where: [{ field: "userId", value: ctx.context.session.user.id }],
+      });
+      return ctx.json(
+        rows.map((row) => ({
+          id: row.id,
+          publicKey: row.publicKey,
+          npub: nip19.npubEncode(row.publicKey),
+          name: row.name ?? null,
+          createdAt: row.createdAt,
+          lastUsedAt: row.lastUsedAt ?? null,
+        })),
+      );
+    },
+  );
+
+export const updatePubkey = (_opts?: NostrOptions) =>
+  createAuthEndpoint(
+    NOSTR_PATHS.updatePubkey,
+    {
+      method: "POST",
+      use: [sessionMiddleware],
+      body: z.object({
+        id: z.string().min(1),
+        name: z.string().min(1).max(120),
+      }),
+      metadata: {
+        openapi: {
+          operationId: "updateNostrPubkey",
+          description: "Rename one of the session user's Nostr pubkeys.",
+          responses: {
+            200: { description: "Pubkey renamed." },
+            404: { description: "No such pubkey for this user." },
+          },
+        },
+      },
+    },
+    async (ctx) => {
+      const row = await findOwnPubkey(ctx, ctx.body.id);
+      const pubkey = await ctx.context.adapter.update<NostrPubkey>({
+        model: MODEL,
+        where: [{ field: "id", value: row.id }],
+        update: { name: ctx.body.name },
+      });
+      return ctx.json({ pubkey: pubkey ?? { ...row, name: ctx.body.name } });
+    },
+  );
+
+export const removePubkey = (_opts?: NostrOptions) =>
+  createAuthEndpoint(
+    NOSTR_PATHS.removePubkey,
+    {
+      method: "POST",
+      use: [freshSessionMiddleware],
+      body: z.object({ id: z.string().min(1) }),
+      metadata: {
+        openapi: {
+          operationId: "removeNostrPubkey",
+          description:
+            "Unlink one of the session user's Nostr pubkeys. Refused for " +
+            "the user's last way to sign in unless " +
+            "account.accountLinking.allowUnlinkingAll is set.",
+          responses: {
+            200: { description: "Pubkey removed." },
+            400: { description: "It is the user's last way to sign in." },
+            404: { description: "No such pubkey for this user." },
+          },
+        },
+      },
+    },
+    async (ctx) => {
+      const row = await findOwnPubkey(ctx, ctx.body.id);
+      const isThisKey = (account: { providerId: string; accountId: string }) =>
+        account.providerId === PROVIDER_ID &&
+        account.accountId === row.publicKey;
+
+      const accounts = await ctx.context.internalAdapter.findAccounts(
+        row.userId,
+      );
+      if (
+        !accounts.some((account) => !isThisKey(account)) &&
+        !ctx.context.options.account?.accountLinking?.allowUnlinkingAll
+      ) {
+        throw APIError.from(
+          "BAD_REQUEST",
+          NOSTR_ERROR_CODES.NOSTR_CANNOT_REMOVE_LAST_PUBKEY,
+        );
+      }
+
+      await runWithTransaction(ctx.context.adapter, async () => {
+        const adapter = await getCurrentAdapter(ctx.context.adapter);
+        await adapter.delete({
+          model: MODEL,
+          where: [{ field: "id", value: row.id }],
+        });
+        for (const account of accounts.filter(isThisKey)) {
+          await ctx.context.internalAdapter.deleteAccount(account.id);
+        }
+      });
+      return ctx.json({ status: true });
     },
   );

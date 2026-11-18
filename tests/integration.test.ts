@@ -514,6 +514,8 @@ describe("POST /nostr/add-pubkey", () => {
         ? Promise.resolve(null as never)
         : create(args),
     );
+    // add-pubkey writes through the transaction's adapter; hand it the spy.
+    vi.spyOn(adapter, "transaction").mockImplementation((run) => run(adapter));
 
     await expect(
       linkPubkey(auth, sessionHeaders, makeKeypair()),
@@ -535,6 +537,8 @@ describe("POST /nostr/add-pubkey", () => {
         ? Promise.reject(new Error("connection to 10.0.0.5 refused"))
         : create(args),
     );
+    // add-pubkey writes through the transaction's adapter; hand it the spy.
+    vi.spyOn(adapter, "transaction").mockImplementation((run) => run(adapter));
 
     const failure = await linkPubkey(auth, sessionHeaders, makeKeypair()).catch(
       (error) => error,

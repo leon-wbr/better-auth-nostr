@@ -59,6 +59,7 @@ export interface NostrOptions extends RelayOptions {
     publicKey?: string;
     userId?: string;
     createdAt?: string;
+    lastUsedAt?: string;
   };
   /** Map the kind 0 profile to user fields. The result is spread over the default `display_name || name` and https `picture` mapping. */
   mapProfileToUser?: (
@@ -89,8 +90,10 @@ export interface NostrPubkey {
   id: string;
   publicKey: string;
   userId: string;
-  name?: string | undefined;
+  name?: string | null | undefined;
   createdAt: Date;
+  /** When the pubkey last signed in; null until then. */
+  lastUsedAt?: Date | null | undefined;
 }
 
 /** @deprecated Use `NostrPubkey`. */
