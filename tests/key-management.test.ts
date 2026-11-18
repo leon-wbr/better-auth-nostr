@@ -270,6 +270,68 @@ describe("account mirror", () => {
   });
 });
 
+describe("account backfill for keys linked before 0.8", () => {
+  const forgetAccounts = async (auth: TestAuth) =>
+    (await auth.$context).adapter.deleteMany({
+      model: "account",
+      where: [{ field: "providerId", value: "nostr" }],
+    });
+
+  it("gives the user's keys their account rows on the next sign-in", async () => {
+    const auth = createTestAuth();
+    const { keypair, headers } = await signIn(auth);
+    const backup = await addKey(auth, headers);
+    await forgetAccounts(auth);
+
+    await performLogin(auth, keypair);
+
+    expect(await nostrAccounts(auth, headers)).toEqual(
+      [keypair.publicKey, backup.publicKey].sort(),
+    );
+  });
+
+  it("lets unlinkAccount remove a backfilled key", async () => {
+    const auth = createTestAuth();
+    const { keypair, headers } = await signIn(auth);
+    const backup = await addKey(auth, headers);
+    await forgetAccounts(auth);
+    await performLogin(auth, keypair);
+    const accounts = await auth.api.listUserAccounts({ headers });
+    const account = accounts.find((a) => a.accountId === backup.publicKey)!;
+
+    await auth.api.unlinkAccount({ body: { accountId: account.id }, headers });
+
+    expect((await list(auth, headers)).map((p) => p.publicKey)).toEqual([
+      keypair.publicKey,
+    ]);
+  });
+
+  it("counts every key for the last-key rule without a new sign-in", async () => {
+    const auth = createTestAuth();
+    const { headers } = await signIn(auth);
+    const backup = await addKey(auth, headers);
+    const [main] = (await list(auth, headers)).filter(
+      (p) => p.id !== backup.id,
+    );
+    await forgetAccounts(auth);
+
+    await remove(auth, headers, main!.id);
+    const error = await errorOf(remove(auth, headers, backup.id));
+
+    expect(error.body.code).toBe("NOSTR_CANNOT_REMOVE_LAST_PUBKEY");
+    expect(await nostrAccounts(auth, headers)).toEqual([backup.publicKey]);
+  });
+
+  it("creates no duplicates for keys that already have one", async () => {
+    const auth = createTestAuth();
+    const { keypair, headers } = await signIn(auth);
+
+    await performLogin(auth, keypair);
+
+    expect(await nostrAccounts(auth, headers)).toEqual([keypair.publicKey]);
+  });
+});
+
 describe("client actions", () => {
   it("lists, renames and removes keys through authClient.nostr", async () => {
     const auth = createTestAuth();

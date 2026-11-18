@@ -4,6 +4,7 @@ import { NOSTR_PATHS } from "./endpoints";
 import { NOSTR_ERROR_CODES } from "./error-codes";
 import {
   addPubkey,
+  backfillAccounts,
   getNostrNonce,
   listPubkeys,
   loginNostr,
@@ -33,6 +34,20 @@ export const nostr = (options?: NostrOptions) => {
       return {
         options: {
           databaseHooks: {
+            session: {
+              create: {
+                after: async (session) => {
+                  try {
+                    await backfillAccounts(ctx, session.userId);
+                  } catch (error) {
+                    ctx.logger.warn(
+                      "[better-auth-nostr] Could not backfill nostr accounts",
+                      error,
+                    );
+                  }
+                },
+              },
+            },
             account: {
               delete: {
                 after: (account) =>

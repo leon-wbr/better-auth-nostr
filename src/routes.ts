@@ -1,3 +1,4 @@
+import type { AuthContext } from "@better-auth/core";
 import {
   getCurrentAdapter,
   runWithTransaction,
@@ -121,6 +122,17 @@ const findPubkeyRow = (ctx: GenericEndpointContext, pubkey: string) =>
 const PROVIDER_ID = "nostr";
 
 /**
+ * Better Auth 1.7.0 to 1.7.2 require an `issuer` on every account row, unique
+ * with `accountId`; later versions have no such column and drop the field.
+ */
+const nostrAccount = (accountId: string, userId: string) => ({
+  providerId: PROVIDER_ID,
+  issuer: `local:${PROVIDER_ID}`,
+  accountId,
+  userId,
+});
+
+/**
  * Creates the pubkey row and its account row, inside the caller's
  * transaction when there is one.
  */
@@ -133,11 +145,9 @@ const createPubkey = async (
     model: MODEL,
     data: { ...data, createdAt: new Date() },
   });
-  await ctx.context.internalAdapter.createAccount({
-    providerId: PROVIDER_ID,
-    accountId: data.publicKey,
-    userId: data.userId,
-  });
+  await ctx.context.internalAdapter.createAccount(
+    nostrAccount(data.publicKey, data.userId),
+  );
   return row;
 };
 
@@ -170,6 +180,34 @@ export const removePubkeysOfAccount = async (
       { field: "userId", value: account.userId },
     ],
   });
+};
+
+/**
+ * Gives the user's keys linked before 0.8 the account row every key has now.
+ * Runs per user (on sign-in and before removing a key) so a large install
+ * isn't scanned at startup.
+ *
+ * @deprecated TODO(1.0): remove (#69). Installs upgrading to 1.0 must have
+ * run a 0.x release with it, or the SQL in the upgrade guide (#66).
+ */
+export const backfillAccounts = async (ctx: AuthContext, userId: string) => {
+  const keys = await ctx.adapter.findMany<NostrPubkey>({
+    model: MODEL,
+    where: [{ field: "userId", value: userId }],
+  });
+  if (keys.length === 0) return;
+  const accounts = await ctx.internalAdapter.findAccounts(userId);
+  for (const { publicKey } of keys) {
+    if (
+      accounts.some(
+        (account) =>
+          account.providerId === PROVIDER_ID && account.accountId === publicKey,
+      )
+    ) {
+      continue;
+    }
+    await ctx.internalAdapter.createAccount(nostrAccount(publicKey, userId));
+  }
 };
 
 const httpsUrl = z.url({ protocol: /^https$/ });
@@ -625,6 +663,7 @@ export const removePubkey = (_opts?: NostrOptions) =>
         account.providerId === PROVIDER_ID &&
         account.accountId === row.publicKey;
 
+      await backfillAccounts(ctx.context, row.userId);
       const accounts = await ctx.context.internalAdapter.findAccounts(
         row.userId,
       );
