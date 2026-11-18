@@ -64,6 +64,22 @@ export interface NostrOptions extends RelayOptions {
   mapProfileToUser?: (
     profile: NostrProfile,
   ) => NostrMappedUser | Promise<NostrMappedUser>;
+  /**
+   * Rate limits per endpoint, in Better Auth's `{ window, max }` form (seconds,
+   * requests). Defaults: nonce 10 per 60s, login 3 per 10s, add-pubkey 5 per
+   * 60s. Like every Better Auth rate limit, they apply only where
+   * `rateLimit.enabled` is on, by default in production.
+   */
+  rateLimit?: Partial<
+    Record<"nonce" | "login" | "addPubkey", { window: number; max: number }>
+  >;
+  /**
+   * Accept a server without `baseURL` or `BETTER_AUTH_URL`, whose URL, and so
+   * the URL NIP-98 signatures are bound to, comes from each request's `Host`
+   * header. Without it the plugin warns at init, and refuses to start in
+   * production.
+   */
+  allowDynamicBaseURL?: boolean;
   /** Also refresh an existing user's fields from their profile on every sign-in; needs `relays`. Defaults to false. */
   overrideUserInfoOnSignIn?: boolean;
 }
