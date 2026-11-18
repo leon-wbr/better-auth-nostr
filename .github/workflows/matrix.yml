@@ -1,7 +1,8 @@
 name: Matrix
 
 # The support matrix behind the README: tests, coverage and build on each
-# supported Node and Better Auth version, and the adapter suite on Postgres.
+# supported Node and Better Auth version, the adapter suite on Postgres, and a
+# full sign-in on Bun, Deno and Cloudflare Workers.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -77,3 +78,47 @@ jobs:
       - run: npm run coverage
       - run: npm run build
 
+  smoke:
+    name: smoke (${{ matrix.runtime }})
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [bun, deno, workers]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install -g npm@11.6.2
+      - run: npm ci
+      - run: npm run build
+      - if: matrix.runtime == 'bun'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - if: matrix.runtime == 'bun'
+        run: bun smoke/cli.ts
+      - if: matrix.runtime == 'deno'
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+      - if: matrix.runtime == 'deno'
+        run: deno run --allow-env --allow-read smoke/cli.ts
+      - if: matrix.runtime == 'workers'
+        env:
+          WRANGLER_SEND_METRICS: "false"
+        run: |
+          npx --yes wrangler@4 dev --config smoke/wrangler.json --port 8787 > wrangler.log 2>&1 &
+          for _ in $(seq 90); do
+            if status=$(curl -s -o body.txt -w '%{http_code}' http://localhost:8787); then
+              cat body.txt
+              echo
+              [ "$status" = 200 ] && exit 0
+              break
+            fi
+            sleep 2
+          done
+          cat wrangler.log
+          exit 1

@@ -6,3 +6,4 @@ coverage
 .claude
 reports
 .stryker-tmp
+.wrangler

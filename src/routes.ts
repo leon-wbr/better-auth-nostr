@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import {
   getCurrentAdapter,
   runWithTransaction,
@@ -32,7 +31,10 @@ import type { NostrMappedUser, NostrOptions, NostrPubkey } from "./types";
 const DEFAULT_NONCE_TTL = 5 * 60 * 1000;
 const PUBKEY_REGEX = /^[a-f0-9]{64}$/i;
 
-const createDefaultNonce = () => randomBytes(16).toString("hex");
+const createDefaultNonce = () =>
+  Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 
 const VERIFICATION_PREFIX = "nostr:";
 /** Fits Better Auth's 255-character verification identifier with the prefix. */

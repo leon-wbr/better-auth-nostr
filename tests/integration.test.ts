@@ -19,8 +19,7 @@ describe("POST /nostr/nonce", () => {
       body: { publicKey: keypair.publicKey },
     });
 
-    expect(typeof nonce).toBe("string");
-    expect(nonce.length).toBeGreaterThanOrEqual(16);
+    expect(nonce).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it("rejects a malformed pubkey", async () => {
