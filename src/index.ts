@@ -2,7 +2,16 @@ import { isProduction } from "@better-auth/core/env";
 import { BetterAuthError, type BetterAuthPlugin } from "better-auth";
 import { NOSTR_PATHS } from "./endpoints";
 import { NOSTR_ERROR_CODES } from "./error-codes";
-import { addPubkey, getNostrNonce, loginNostr } from "./routes";
+import {
+  addPubkey,
+  backfillAccounts,
+  getNostrNonce,
+  listPubkeys,
+  loginNostr,
+  removePubkey,
+  removePubkeysOfAccount,
+  updatePubkey,
+} from "./routes";
 import type { NostrOptions } from "./types";
 
 const DEFAULT_RATE_LIMITS = {
@@ -18,14 +27,44 @@ export const nostr = (options?: NostrOptions) => {
   return {
     id: "nostr",
     init(ctx) {
-      if (ctx.options.baseURL || options?.allowDynamicBaseURL) return;
-      if (isProduction) throw new BetterAuthError(MISSING_BASE_URL);
-      ctx.logger.warn(`[better-auth-nostr] ${MISSING_BASE_URL}`);
+      if (!ctx.options.baseURL && !options?.allowDynamicBaseURL) {
+        if (isProduction) throw new BetterAuthError(MISSING_BASE_URL);
+        ctx.logger.warn(`[better-auth-nostr] ${MISSING_BASE_URL}`);
+      }
+      return {
+        options: {
+          databaseHooks: {
+            session: {
+              create: {
+                after: async (session) => {
+                  try {
+                    await backfillAccounts(ctx, session.userId);
+                  } catch (error) {
+                    ctx.logger.warn(
+                      "[better-auth-nostr] Could not backfill nostr accounts",
+                      error,
+                    );
+                  }
+                },
+              },
+            },
+            account: {
+              delete: {
+                after: (account) =>
+                  removePubkeysOfAccount(ctx.adapter, account),
+              },
+            },
+          },
+        },
+      };
     },
     endpoints: {
       getNostrNonce: getNostrNonce(options),
       loginNostr: loginNostr(options),
       addPubkey: addPubkey(options),
+      listPubkeys: listPubkeys(options),
+      updatePubkey: updatePubkey(options),
+      removePubkey: removePubkey(options),
     },
     schema: {
       nostrPubkey: {
@@ -54,6 +93,11 @@ export const nostr = (options?: NostrOptions) => {
             type: "date",
             required: true,
             fieldName: options?.fields?.createdAt ?? "createdAt",
+          },
+          lastUsedAt: {
+            type: "date",
+            required: false,
+            fieldName: options?.fields?.lastUsedAt ?? "lastUsedAt",
           },
         },
       },

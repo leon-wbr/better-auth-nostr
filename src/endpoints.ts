@@ -3,6 +3,9 @@ export const NOSTR_PATHS = {
   nonce: "/nostr/nonce",
   login: "/nostr/login",
   addPubkey: "/nostr/add-pubkey",
+  listPubkeys: "/nostr/list-pubkeys",
+  updatePubkey: "/nostr/update-pubkey",
+  removePubkey: "/nostr/remove-pubkey",
 } as const;
 
 export type NostrPath = (typeof NOSTR_PATHS)[keyof typeof NOSTR_PATHS];

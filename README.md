@@ -136,6 +136,24 @@ Each login request carries a nonce in both the signed NIP-98 payload and the JSO
 
 `nostr.addPubkey` follows the same flow against `/nostr/add-pubkey`: it fetches a nonce for the new key, signs a NIP-98 event with it, and sends it alongside the existing session cookie. The endpoint requires both a valid session and a fresh single-use nonce, so an intercepted token cannot be replayed to attach someone else's key. Linking a pubkey that the signed-in user already owns is a no-op; linking one owned by another account returns `409`.
 
+### Managing linked keys
+
+Users can see, rename and remove the keys linked to their account, through endpoints modelled on Better Auth's passkey plugin:
+
+```ts
+const { data: pubkeys } = await authClient.nostr.listPubkeys();
+// [{ id, publicKey, npub, name, createdAt, lastUsedAt }]
+
+await authClient.nostr.updatePubkey({ id, name: "Laptop" });
+await authClient.nostr.removePubkey({ id });
+```
+
+`GET /nostr/list-pubkeys` lists the session user's keys; `lastUsedAt` is set on every sign-in and is `null` until the first one. `POST /nostr/update-pubkey` renames a key and `POST /nostr/remove-pubkey` unlinks one. Both answer `404` with `NOSTR_PUBKEY_NOT_FOUND` for a key the session user does not own, and removing needs a fresh session (Better Auth's `session.freshAge`, a day by default), like `unlinkAccount`.
+
+A user cannot remove their last way to sign in: removal is refused with `NOSTR_CANNOT_REMOVE_LAST_PUBKEY` when the key's own account row is the user's only one, unless `account.accountLinking.allowUnlinkingAll` is set. Another Nostr key, an email and password or a social account all count.
+
+Every linked key is also an `account` row with `providerId: "nostr"` and the hex pubkey as `accountId`, written at sign-up and by `addPubkey` and removed with the key. So `listUserAccounts` shows Nostr keys, `unlinkAccount` on a Nostr account removes its key as well (and keeps Better Auth's own last-account guard), and admin tooling sees a Nostr-only user as having a credential. Keys linked before this release have no account row yet; the plugin creates them for a user when that user signs in or removes a key. This backfill is temporary and [1.0 removes it](https://github.com/leon-wbr/better-auth-nostr/issues/69), so upgrade through a 0.x release (or run the SQL in the 1.0 upgrade guide) before moving to 1.0.
+
 Because the signed event is bound to the endpoint URL, the client has to sign against `baseURL + basePath` — the same URL the server validates against. If you mount Better Auth somewhere other than the default `/api/auth`, pass `basePath` to `createAuthClient` so the two agree.
 
 Set `baseURL` on the server as well. The event is validated against `ctx.context.baseURL`, and when that is neither configured nor supplied through `BETTER_AUTH_URL`, Better Auth derives it from the incoming request — which means a `Host` header an attacker controls decides the URL the signature is checked against. Configuring `baseURL` is what makes that binding meaningful behind a proxy. Without `baseURL` or `BETTER_AUTH_URL` the plugin warns at startup, and in production (`NODE_ENV=production`) it refuses to start unless you pass `allowDynamicBaseURL: true`. A dynamic `baseURL` with `allowedHosts` counts as configured.
@@ -174,6 +192,8 @@ The server answers with these, plus Better Auth's own `USER_NOT_FOUND`, `FAILED_
 | `NOSTR_PUBKEY_NOT_REGISTERED`       | 401    | `disableImplicitSignUp` is set and the pubkey has no user.        |
 | `NOSTR_PUBKEY_LINKED_TO_OTHER_USER` | 409    | `addPubkey` for a pubkey another user owns.                       |
 | `NOSTR_FAILED_TO_CREATE_PUBKEY`     | 500    | Storing the pubkey failed.                                        |
+| `NOSTR_PUBKEY_NOT_FOUND`            | 404    | `updatePubkey` or `removePubkey` for a key the user does not own. |
+| `NOSTR_CANNOT_REMOVE_LAST_PUBKEY`   | 400    | `removePubkey` for the user's last way to sign in.                |
 
 The client reports these without a server response, in the shape Better Auth's passkey client uses (`statusText` `"BAD_REQUEST"`, or `"REQUEST_TIMEOUT"` for 408):
 
@@ -231,7 +251,7 @@ Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerific
 | `disableSignUp`            | Deprecated, has no effect. Use `disableImplicitSignUp`.                                                                           |
 | `disableImplicitSignUp`    | Reject logins from unseen pubkeys instead of auto-creating a Better Auth user.                                                    |
 | `modelName`                | Override the `nostrPubkey` model name registered in the schema.                                                                   |
-| `fields`                   | Customize field names for `name`, `publicKey`, `userId`, and `createdAt`.                                                         |
+| `fields`                   | Customize field names for `name`, `publicKey`, `userId`, `createdAt` and `lastUsedAt`.                                            |
 | `nonceTtlMs`               | Nonce time-to-live in milliseconds. Defaults to 5 minutes.                                                                        |
 | `getNonce`                 | Custom nonce generator. Must return `Promise<string>` of 8–249 characters from `[A-Za-z0-9_-]`, unique per request.               |
 | `generateEmail`            | Customize the email used when implicitly creating a user. Receives the npub and the hex pubkey.                                   |
