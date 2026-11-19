@@ -3,10 +3,14 @@ import { getMigrations } from "better-auth/db/migration";
 import { afterAll, describe, expect, it } from "vitest";
 import type { NostrOptions } from "../src/types";
 import {
+  cookiesFromResponse,
   createTestAuth,
+  issueNonce,
   makeKeypair,
   performLogin,
   prepareLogin,
+  signAddPubkeyToken,
+  type TestAuth,
 } from "./helpers";
 
 // node:sqlite is unflagged from Node 22.13; older runtimes skip it.
@@ -71,6 +75,9 @@ const setup = async (backend: Backend, options?: NostrOptions) => {
 const userIdOf = async (res: Response) =>
   ((await res.json()) as { user: { id: string } }).user.id;
 
+const signIn = async (auth: TestAuth) =>
+  cookiesFromResponse(await performLogin(auth, makeKeypair()));
+
 describe.each(backends)("$name adapter", (backend) => {
   const test = it.skipIf(!backend.available);
   const itUnique = it.skipIf(!backend.available || !backend.enforcesUniqueness);
@@ -124,4 +131,30 @@ describe.each(backends)("$name adapter", (backend) => {
       code: "NOSTR_INVALID_NONCE",
     });
   });
+
+  itUnique(
+    "links a pubkey to one of two users who add it at the same time",
+    async () => {
+      const { auth, count } = await setup(backend);
+      const [alice, bob] = await Promise.all([signIn(auth), signIn(auth)]);
+      const keypair = makeKeypair();
+      const add = async (headers: Headers) => {
+        const nonce = await issueNonce(auth, keypair);
+        const token = await signAddPubkeyToken(keypair, nonce);
+        headers.set("authorization", token);
+        return () =>
+          auth.api.addPubkey({ body: { nonce }, headers, asResponse: true });
+      };
+      const calls = await Promise.all([add(alice), add(bob)]);
+
+      const responses = await Promise.all(calls.map((call) => call()));
+
+      expect(responses.map((res) => res.status).sort()).toEqual([200, 409]);
+      const conflict = responses.find((res) => res.status === 409)!;
+      expect(await conflict.json()).toMatchObject({
+        code: "NOSTR_PUBKEY_LINKED_TO_OTHER_USER",
+      });
+      expect(await count("nostrPubkey")).toBe(3);
+    },
+  );
 });
