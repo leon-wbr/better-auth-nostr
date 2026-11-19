@@ -218,7 +218,7 @@ The full list is in [Configuration Options](#configuration-options). The client 
 
 ## Requirements
 
-Node.js `>= 20`.
+Node.js `>= 22`, Bun, Deno or Cloudflare Workers with `nodejs_compat`. The server-side relay lookup needs the global `WebSocket`, which Node has by default from 22.
 
 Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerificationValue`, which was introduced in 1.7.0.
 

@@ -20,7 +20,7 @@ Please don't open a public issue for a vulnerability. Use GitHub's [private vuln
 
 ## Working on the code
 
-You need Node 20 or newer and npm 11 (the version in `package.json`'s `packageManager`).
+You need Node 22 or newer and npm 11 (the version in `package.json`'s `packageManager`).
 
 ```bash
 git clone https://github.com/leon-wbr/better-auth-nostr.git
@@ -49,7 +49,7 @@ docker run --rm -d --name ban-pg -p 5432:5432 -e POSTGRES_PASSWORD=postgres post
 POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres npm test
 ```
 
-The `Matrix` workflow runs tests, coverage and build on Node 22 and 24 with Better Auth 1.7.0 and the latest release, and the adapter suite against a Postgres service.
+The `Matrix` workflow runs tests, coverage and build on Node 22 and 24 with Better Auth 1.7.0 and the latest release, the adapter suite against a Postgres service, and `smoke/sign-in.ts`, a full sign-in against the built package, on Bun, Deno and Cloudflare Workers (`nodejs_compat`). After `npm run build`, run the smoke test with `bun smoke/cli.ts`, `deno run --allow-env --allow-read smoke/cli.ts` or `npx wrangler dev --config smoke/wrangler.json`.
 
 `npm run mutate` runs Stryker over `src/routes.ts` and `src/signer.ts`, where a flipped comparison is a security bug that line coverage can't see. It takes a few minutes, so it runs on demand, not in CI; the HTML report lands in `reports/stryker/`. When you change the NIP-98 checks or the signers, run it and don't let the score drop. `stryker.config.ts` is typed with `PartialStrykerOptions` and loaded through Node’s native type stripping (Node 22.18+). The script passes its filename explicitly because Stryker 10 does not auto-discover TypeScript configs. It points `tsconfigFile` at a file that doesn't exist on purpose: Stryker's tsconfig preprocessor calls a TypeScript API that TypeScript 7 no longer has.
 
