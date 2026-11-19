@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.8.0](https://github.com/leon-wbr/better-auth-nostr/compare/v0.7.0...v0.8.0) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* require Node 22 and prove sign-in on Bun, Deno and Workers in CI ([#67](https://github.com/leon-wbr/better-auth-nostr/issues/67))
+* rate-limit the nostr endpoints and require baseURL in production ([#63](https://github.com/leon-wbr/better-auth-nostr/issues/63))
+
+### Features
+
+* list, rename and remove linked pubkeys, mirrored as nostr accounts ([#68](https://github.com/leon-wbr/better-auth-nostr/issues/68)) ([4e0c9c7](https://github.com/leon-wbr/better-auth-nostr/commit/4e0c9c7d4cc5d3602a9a5ea79bb0ca3dbb71a2b7)), closes [#32](https://github.com/leon-wbr/better-auth-nostr/issues/32)
+* rate-limit the nostr endpoints and require baseURL in production ([#63](https://github.com/leon-wbr/better-auth-nostr/issues/63)) ([781077f](https://github.com/leon-wbr/better-auth-nostr/commit/781077fea004be5c282e460a99aab88bbb0ceb9f))
+* require Node 22 and prove sign-in on Bun, Deno and Workers in CI ([#67](https://github.com/leon-wbr/better-auth-nostr/issues/67)) ([b7dc483](https://github.com/leon-wbr/better-auth-nostr/commit/b7dc483b5525f123a3b9e628bfc363ebb21d5b58)), closes [#31](https://github.com/leon-wbr/better-auth-nostr/issues/31)
+
+
+### Bug Fixes
+
+* answer 409 or 200, not 500, when the same pubkey is added twice at once ([#71](https://github.com/leon-wbr/better-auth-nostr/issues/71)) ([c3e231f](https://github.com/leon-wbr/better-auth-nostr/commit/c3e231f9bcf947a9d7bfbb69e50826ee69089f52))
+
 ## [0.7.0](https://github.com/leon-wbr/better-auth-nostr/compare/v0.6.0...v0.7.0) (2026-11-16)
 
 
