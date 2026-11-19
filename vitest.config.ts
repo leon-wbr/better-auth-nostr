@@ -11,9 +11,9 @@ export default defineProject({
       provider: "v8",
       include: ["src/**"],
       reporter: ["text-summary", "json-summary", "html"],
-      // A ratchet: just under the numbers measured on main (89.87 / 79.63 /
-      // 79.31 / 89.72). Raise them as tests land; never lower them.
-      thresholds: { statements: 89, branches: 79, functions: 79, lines: 89 },
+      // The 1.0 gate (#31) is 90% lines and 85% branches; raise the
+      // thresholds as tests land, never lower them.
+      thresholds: { statements: 90, branches: 85, functions: 90, lines: 90 },
     },
   },
 });

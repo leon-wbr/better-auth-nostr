@@ -1,0 +1,79 @@
+name: Matrix
+
+# The support matrix behind the README: tests, coverage and build on each
+# supported Node and Better Auth version, and the adapter suite on Postgres.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: matrix-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: test (node ${{ matrix.node }}, better-auth ${{ matrix.better-auth }})
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+        better-auth: ["1.7.0", latest]
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 2s --health-timeout 5s
+          --health-retries 15
+    env:
+      POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      # The lockfile is written by the npm in packageManager; Node's bundled npm may reject it.
+      - run: npm install -g npm@11.6.2
+      - run: npm ci
+      # Swap in the whole Better Auth family at one version: every @better-auth/*
+      # package locked at better-auth's version, plus core's peers that we depend
+      # on too (better-call, @better-fetch/fetch, ...) where the locked version
+      # is outside core's range.
+      - name: Install better-auth ${{ matrix.better-auth }}
+        env:
+          BETTER_AUTH: ${{ matrix.better-auth }}
+        run: |
+          version=$(npm view "better-auth@$BETTER_AUTH" version)
+          peers=$(npm view "@better-auth/core@$version" peerDependencies --json)
+          list=$(PEERS="$peers" VERSION="$version" node -e '
+            const { packages } = require("./package-lock.json");
+            const { devDependencies, peerDependencies } = require("./package.json");
+            const locked = packages["node_modules/better-auth"].version;
+            const family = Object.keys(packages)
+              .filter((p) => /^node_modules\/@better-auth\/[^/]+$/.test(p) && packages[p].version === locked)
+              .map((p) => `${p.slice("node_modules/".length)}@${process.env.VERSION}`);
+            const { satisfies } = require("semver");
+            const own = { ...devDependencies, ...peerDependencies };
+            const peers = Object.entries(JSON.parse(process.env.PEERS))
+              .filter(([name, range]) => name in own && !satisfies(packages[`node_modules/${name}`].version, range))
+              .map(([name, range]) => `${name}@${range}`);
+            console.log([`better-auth@${process.env.VERSION}`, ...family, ...peers].join("\n"));
+          ')
+          mapfile -t specs <<< "$list"
+          npm install --no-save "${specs[@]}"
+          npm ls "${specs[@]%@*}" better-call @better-fetch/fetch @better-auth/utils
+      - run: npm run coverage
+      - run: npm run build
+
