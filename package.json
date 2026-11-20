@@ -20,8 +20,14 @@
     "check": "npm run lint && npm run typecheck && npm run coverage",
     "ci:local": "npm run check && npm run build",
     "mutate": "stryker run stryker.config.ts",
+    "docs:generate": "npm run build && npm run generate -w scripts/docs",
+    "docs:dev": "npm run dev -w scripts/docs",
+    "docs:build": "npm run build -w scripts/docs",
     "prepublishOnly": "npm run build"
   },
+  "workspaces": [
+    "scripts/docs"
+  ],
   "publishConfig": {
     "access": "public",
     "provenance": true

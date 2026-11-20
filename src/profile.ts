@@ -18,8 +18,10 @@ const profileMetadataSchema = z.looseObject({
   lud16: z.string().optional().catch(undefined),
 });
 
+/** The kind `0` fields: `name`, `display_name`, `about`, `picture`, `banner`, `website`, `nip05`, `lud16`, plus unknown keys. */
 export type NostrProfileMetadata = z.infer<typeof profileMetadataSchema>;
 
+/** A kind `0` profile: `pubkey`, `relays`, `metadata` and the source `event`. */
 export type NostrProfile = Required<ProfilePointer> & {
   metadata: NostrProfileMetadata;
   /** The kind 0 event the metadata came from. */

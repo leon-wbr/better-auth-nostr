@@ -13,278 +13,52 @@
 <a href="https://www.npmjs.com/package/better-auth-nostr"><img src="https://img.shields.io/npm/v/better-auth-nostr.svg" alt="npm version"></a>
 </p>
 
-## Contents
+## Why
 
-- [Overview](#-overview)
-- [Installation](#installation)
-- [Example](#example)
-- [Relays](#relays)
-- [Requirements](#requirements)
-- [Configuration Options](#configuration-options)
-- [Development](#development)
-- [Project Status](#project-status)
-- [Get Involved](#get-involved)
-- [License](#license)
+Most Nostr logins live in bespoke, one-off integrations. As a Better Auth plugin, Nostr sign-in sits next to your existing auth flows with a single import, and Nostr-first apps get Better Auth's sessions, cookies and schema without rebuilding them. The server verifies a [NIP-98](https://github.com/nostr-protocol/nips/blob/master/98.md) signed event and never sees a password or private key; each user can link several keys.
 
-## 🧭 Overview
-
-This plugin exposes both a server-side `nostr` plugin and a client helper so Better Auth installations can:
-
-- validate incoming NIP-98 tokens and create a session cookie without touching passwords or private keys,
-- persist each Nostr public key in a configurable `nostrPubkey` model so users retain a linked identity,
-- link additional pubkeys to an existing account through an authenticated endpoint.
-
-It is designed to be as simple as possible, dropping decentralized login flows into traditional apps with minimal wiring.
-
-## Installation
+## Install
 
 ```bash
 npm install better-auth better-auth-nostr
 ```
 
-The other peer dependencies (`@better-auth/core`, `@better-auth/utils`, `@better-fetch/fetch`, `nanostores`) are installed for you by npm 7 and later. With another package manager, add them yourself.
+Supports Better Auth `^1.7`, tested at 1.7.0 and the latest release on Node 22 and 24, Bun, Deno and Cloudflare Workers, against SQLite and Postgres. The [support matrix](https://leon-wbr.github.io/better-auth-nostr/support/) has the details.
 
-## Example
+## Quick start
 
 ```ts
 import { betterAuth } from "better-auth";
 import { nostr } from "better-auth-nostr";
 
 export const auth = betterAuth({
+  baseURL: "https://app.example.com",
   plugins: [nostr()],
 });
 ```
 
-On the client:
+Run `npx auth@latest migrate` to add the `nostrPubkey` table, then on the client:
 
 ```ts
 import { createAuthClient } from "better-auth/client";
 import { nostrClient } from "better-auth-nostr/client";
 
-export const authClient = createAuthClient({
-  plugins: [nostrClient()],
-});
+export const authClient = createAuthClient({ plugins: [nostrClient()] });
 
-await authClient.signIn.nostr({ nsec });
-
-await authClient.nostr.addPubkey({ nsec, name: "Backup key" });
+// Signs with the NIP-07 extension; pass { nsec } or { signer } for others.
+const { data, error } = await authClient.signIn.nostr();
 ```
 
-`signIn.nostr` will create and sign the NIP-98 event using, in order of precedence:
-
-- a `signer` you pass in — anything with `getPublicKey()` and `signEvent()`, including a NIP-46 remote signer (see below),
-- a passed-in `nsec` string (bech32 or 64-char hex), or
-- a browser extension that exposes `window.nostr.signEvent` (NIP-07).
-
-### Remote signers (NIP-46)
-
-Most people keep their key in a remote signer — Amber, nsec.app, nsecbunker — rather than pasting an nsec into a web app. Both halves of NIP-46 are supported, and both produce a signer you hand to `signIn.nostr` or `nostr.addPubkey`.
-
-The user pastes a `bunker://` URI (or a NIP-05 identifier whose provider advertises NIP-46):
-
-```ts
-import { createBunkerSigner } from "better-auth-nostr/client";
-
-const signer = await createBunkerSigner(uri, {
-  onAuthUrl: (url) => window.open(url, "_blank"),
-  metadata: { name: "My App", url: window.location.origin },
-  timeoutMs: 120_000,
-});
-
-try {
-  await authClient.signIn.nostr({ signer });
-} finally {
-  await signer.close();
-}
-```
-
-Or the app mints a `nostrconnect://` URI for the user to scan. The URI is generated synchronously so you can render the QR code immediately; nothing touches the network until `connect()` is awaited:
-
-```ts
-import { createNostrConnectSession } from "better-auth-nostr/client";
-
-const session = createNostrConnectSession({
-  metadata: { name: "My App" },
-  relays: ["wss://relay.nsec.app"],
-});
-showQrCode(session.uri);
-
-// Resolves once the signer approves, rejects when the deadline passes.
-const signer = await session.connect(120_000);
-await authClient.signIn.nostr({ signer });
-```
-
-A remote signer is a live relay subscription, so its lifetime is yours to manage: call `close()` when you are done — that closes the subscription, and the relay pool too unless you supplied your own via `pool`.
-
-To resume a session later without a second approval prompt, persist both `signer.clientSecretKey` and `signer.bunkerUri`, then hand them back to `createBunkerSigner(bunkerUri, { clientSecretKey })`. This works for either flow: a `nostrconnect://` session learns its signer's pubkey and relays during the handshake, and `bunkerUri` is how you keep them.
-
-Every remote call is bounded by `timeoutMs` (5 minutes by default, and settable per request through `signIn.nostr({ signer, timeoutMs })`). Without one a signer that never answers would leave the promise pending forever, since NIP-46 requests have no deadline of their own.
-
-Both flows request only `sign_event:27235` by default — enough to authenticate, and nothing else. Widen it with `perms` if your app also signs notes. Note that some signers ignore requested permissions and prompt per signature regardless; where that happens, each signature waits on a human, which is what the staleness error below is about.
-
-One caveat is worth knowing about: NIP-98 stamps `created_at` before the event is signed, and the server rejects anything more than 60 seconds old. A remote signer that waits on a human tapping "approve" on a phone can blow through that. The client detects it a few seconds before the server's limit — leaving room for network transit — and fails with an explicit "the signer took too long" message instead of an opaque `401`.
-
-The action sends the resulting token in the `Authorization` header to `/nostr/login`. The endpoint then:
-
-1. unpacks the event via `nostr-tools/nip98`,
-2. verifies the signature against the canonical login URL,
-3. atomically consumes the issued nonce so it cannot be replayed,
-4. finds or creates a `nostrPubkey` row tied to a Better Auth user,
-5. issues a session and sets the cookie.
-
-Each login request carries a nonce in both the signed NIP-98 payload and the JSON body, so tampering with either side fails validation. The nonce is single-use — consumed atomically on the server.
-
-`nostr.addPubkey` follows the same flow against `/nostr/add-pubkey`: it fetches a nonce for the new key, signs a NIP-98 event with it, and sends it alongside the existing session cookie. The endpoint requires both a valid session and a fresh single-use nonce, so an intercepted token cannot be replayed to attach someone else's key. Linking a pubkey that the signed-in user already owns is a no-op; linking one owned by another account returns `409`.
-
-### Managing linked keys
-
-Users can see, rename and remove the keys linked to their account, through endpoints modelled on Better Auth's passkey plugin:
-
-```ts
-const { data: pubkeys } = await authClient.nostr.listPubkeys();
-// [{ id, publicKey, npub, name, createdAt, lastUsedAt }]
-
-await authClient.nostr.updatePubkey({ id, name: "Laptop" });
-await authClient.nostr.removePubkey({ id });
-```
-
-`GET /nostr/list-pubkeys` lists the session user's keys; `lastUsedAt` is set on every sign-in and is `null` until the first one. `POST /nostr/update-pubkey` renames a key and `POST /nostr/remove-pubkey` unlinks one. Both answer `404` with `NOSTR_PUBKEY_NOT_FOUND` for a key the session user does not own, and removing needs a fresh session (Better Auth's `session.freshAge`, a day by default), like `unlinkAccount`.
-
-A user cannot remove their last way to sign in: removal is refused with `NOSTR_CANNOT_REMOVE_LAST_PUBKEY` when the key's own account row is the user's only one, unless `account.accountLinking.allowUnlinkingAll` is set. Another Nostr key, an email and password or a social account all count.
-
-Every linked key is also an `account` row with `providerId: "nostr"` and the hex pubkey as `accountId`, written at sign-up and by `addPubkey` and removed with the key. So `listUserAccounts` shows Nostr keys, `unlinkAccount` on a Nostr account removes its key as well (and keeps Better Auth's own last-account guard), and admin tooling sees a Nostr-only user as having a credential. Keys linked before this release have no account row yet; the plugin creates them for a user when that user signs in or removes a key. This backfill is temporary and [1.0 removes it](https://github.com/leon-wbr/better-auth-nostr/issues/69), so upgrade through a 0.x release (or run the SQL in the 1.0 upgrade guide) before moving to 1.0.
-
-Because the signed event is bound to the endpoint URL, the client has to sign against `baseURL + basePath` — the same URL the server validates against. If you mount Better Auth somewhere other than the default `/api/auth`, pass `basePath` to `createAuthClient` so the two agree.
-
-Set `baseURL` on the server as well. The event is validated against `ctx.context.baseURL`, and when that is neither configured nor supplied through `BETTER_AUTH_URL`, Better Auth derives it from the incoming request — which means a `Host` header an attacker controls decides the URL the signature is checked against. Configuring `baseURL` is what makes that binding meaningful behind a proxy. Without `baseURL` or `BETTER_AUTH_URL` the plugin warns at startup, and in production (`NODE_ENV=production`) it refuses to start unless you pass `allowDynamicBaseURL: true`. A dynamic `baseURL` with `allowedHosts` counts as configured.
-
-The three endpoints carry their own rate limits, in the style of Better Auth's magic-link and phone-number plugins: `/nostr/nonce` 10 requests per 60 seconds, `/nostr/login` 3 per 10 seconds (Better Auth's sign-in limit) and `/nostr/add-pubkey` 5 per 60 seconds, per client IP. They apply wherever Better Auth's rate limiter is on, which by default is production only. Override them with `rateLimit: { nonce: { window: 60, max: 20 } }`, or turn one off with Better Auth's `rateLimit.customRules`.
-
-### Signing other events
-
-The same signer resolution powers a post-login helper, so an app can publish a note or update a profile without wiring up a second signing path:
-
-```ts
-const { data: event, error } = await authClient.nostr.signEvent(
-  { kind: 1, created_at: Math.floor(Date.now() / 1000), tags: [], content: "gm" },
-  { signer },
-);
-```
-
-It takes the same `signer` / `nsec` / NIP-07 precedence and `timeoutMs` as `signIn.nostr`, makes no server request, and returns `{ data, error }` like the other actions instead of throwing. The returned event is checked before you see it: its signature must verify and its pubkey must match the one the signer reported. A remote signer only signs kinds it was granted, so widen `perms` (for example `sign_event:1`) when you create it.
-
-### Error codes
-
-`signIn.nostr`, `nostr.addPubkey`, `nostr.signEvent` and `nostr.getProfile` never throw: a failure comes back as `{ data: null, error }` with an `error.code`. Match on the code, not the message. The codes are public API from 1.0 and only change in a breaking release; message text can change any time.
-
-Both plugins declare the codes as `$ERROR_CODES`, so `keyof typeof authClient.$ERROR_CODES` includes them for error translations. To compare at runtime, import `NOSTR_ERROR_CODES` (and its `NostrErrorCode` type) from `better-auth-nostr` or `better-auth-nostr/client`.
-
-The server answers with these, plus Better Auth's own `USER_NOT_FOUND`, `FAILED_TO_CREATE_USER`, `FAILED_TO_CREATE_SESSION` and `VALIDATION_ERROR`:
-
-| Code                                | Status | When                                                              |
-| ----------------------------------- | ------ | ----------------------------------------------------------------- |
-| `NOSTR_MISSING_TOKEN`               | 400    | No NIP-98 token in the `Authorization` header.                    |
-| `NOSTR_INVALID_TOKEN`               | 400    | The header is not a NIP-98 token.                                 |
-| `NOSTR_INVALID_EVENT`               | 401    | The event's signature, kind, URL, method or payload is wrong.     |
-| `NOSTR_EVENT_EXPIRED`               | 401    | The event was signed more than 60 seconds before or after now.    |
-| `NOSTR_INVALID_NONCE`               | 400    | The nonce is blank.                                               |
-| `NOSTR_INVALID_NONCE`               | 401    | The nonce is unknown, used, expired or issued for another pubkey. |
-| `NOSTR_PUBKEY_NOT_REGISTERED`       | 401    | `disableImplicitSignUp` is set and the pubkey has no user.        |
-| `NOSTR_PUBKEY_LINKED_TO_OTHER_USER` | 409    | `addPubkey` for a pubkey another user owns.                       |
-| `NOSTR_FAILED_TO_CREATE_PUBKEY`     | 500    | Storing the pubkey failed.                                        |
-| `NOSTR_PUBKEY_NOT_FOUND`            | 404    | `updatePubkey` or `removePubkey` for a key the user does not own. |
-| `NOSTR_CANNOT_REMOVE_LAST_PUBKEY`   | 400    | `removePubkey` for the user's last way to sign in.                |
-
-The client reports these without a server response, in the shape Better Auth's passkey client uses (`statusText` `"BAD_REQUEST"`, or `"REQUEST_TIMEOUT"` for 408):
-
-| Code                          | Status | When                                                                                  |
-| ----------------------------- | ------ | ------------------------------------------------------------------------------------- |
-| `NOSTR_NO_SIGNER`             | 400    | No `signer`, no `nsec` and no NIP-07 extension.                                       |
-| `NOSTR_SIGNER_TIMEOUT`        | 408    | The signer did not answer within `timeoutMs`.                                         |
-| `NOSTR_SIGNER_TOO_SLOW`       | 400    | The signer approved so late that the server would reject the event.                   |
-| `NOSTR_SIGNER_CLOCK_SKEW`     | 400    | The signer's clock runs ahead of this device's.                                       |
-| `NOSTR_SIGNER_KEY_MISMATCH`   | 400    | The signer signed with a different key than it reported.                              |
-| `NOSTR_SIGNER_INVALID_EVENT`  | 400    | The signer's event does not verify.                                                   |
-| `NOSTR_RELAYS_NOT_CONFIGURED` | 400    | `getProfile` without `nostrClient({ relays })`.                                       |
-| `NOSTR_UNKNOWN_ERROR`         | 400    | Anything else, such as a signer that refuses, an invalid `nsec` or a missing `baseURL`. |
-
-### Profile metadata
-
-Configure relays on the client and `nostr.getProfile` resolves an `npub`, `nprofile`, hex pubkey or NIP-05 identifier and returns the user's kind `0` metadata, for showing a name and avatar or prefilling a signup form:
-
-```ts
-export const authClient = createAuthClient({
-  plugins: [nostrClient({ relays: ["wss://relay.example.com"] })],
-});
-
-const { data: profile, error } = await authClient.nostr.getProfile("alice@example.com");
-profile?.metadata.display_name;
-```
-
-It runs in the browser and makes no server request. Relay hints from an `nprofile` or the NIP-05 record are queried alongside your `relays`, and the newest kind `0` event wins; the pool verifies its signature. `data` is `null` when the identity does not resolve or no relay has a profile, and `error` is set for input it cannot interpret. `relayTimeoutMs` bounds the wait, and `getProfile(input, { timeoutMs })` overrides it per call. `input` is required: the session does not carry the user's pubkey, so pass the one you signed in with.
-
-`metadata` keeps the NIP-01 and NIP-24 string fields (`name`, `display_name`, `about`, `picture`, `banner`, `website`, `nip05`, `lud16`) and passes unknown keys through; a known field with the wrong type is dropped. Metadata is user-supplied and unverified: treat `picture` and `website` as untrusted URLs, and note that `nip05` is only a claim until checked against the pubkey.
-
-### Relays
-
-This plugin ships with no default relays, on purpose. Which relays your app talks to is a product decision (privacy, reliability, censorship resistance, who sees your users' pubkeys and IPs), and a library that picks for you makes that decision silently. Every feature that reads from relays therefore needs `relays` configured; leaving it out is a type error.
-
-Two options set this up. Both are top-level options of `nostr()` and `nostrClient()`, since they describe how to reach relays rather than what a feature does with the data:
-
-- `relays`: the relays to read from. No default.
-- `relayTimeoutMs`: how long to wait on relays, in milliseconds. Defaults to 5000.
-
-The full list is in [Configuration Options](#configuration-options). The client follows relay hints from `nprofile`s and NIP-05 records, because there they only make the user's own browser connect somewhere.
-
-## Requirements
-
-Node.js `>= 22`, Bun, Deno or Cloudflare Workers with `nodejs_compat`. The server-side relay lookup needs the global `WebSocket`, which Node has by default from 22.
-
-Better Auth `>= 1.7.0`. The nonce flow relies on `internalAdapter.consumeVerificationValue`, which was introduced in 1.7.0.
-
-`nostr-tools >= 2.20.0`. The `nostrconnect://` flow cancels through `BunkerSigner.fromURI`'s `AbortSignal` parameter, which first ships in 2.20.0; on older versions a deadline is silently ignored.
-
-## Configuration Options
-
-| Option                     | Description                                                                                                                       |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `disableSignUp`            | Deprecated, has no effect. Use `disableImplicitSignUp`.                                                                           |
-| `disableImplicitSignUp`    | Reject logins from unseen pubkeys instead of auto-creating a Better Auth user.                                                    |
-| `modelName`                | Override the `nostrPubkey` model name registered in the schema.                                                                   |
-| `fields`                   | Customize field names for `name`, `publicKey`, `userId`, `createdAt` and `lastUsedAt`.                                            |
-| `nonceTtlMs`               | Nonce time-to-live in milliseconds. Defaults to 5 minutes.                                                                        |
-| `getNonce`                 | Custom nonce generator. Must return `Promise<string>` of 8–249 characters from `[A-Za-z0-9_-]`, unique per request.               |
-| `generateEmail`            | Customize the email used when implicitly creating a user. Receives the npub and the hex pubkey.                                   |
-| `relays`                   | Relays the server reads from. No default. When set, a new user is filled from their kind `0` profile at sign-up; when unset, no lookup happens. See [Relays](#relays). |
-| `relayTimeoutMs`           | How long to wait on relays, in milliseconds. Defaults to 5000.                                                                    |
-| `mapProfileToUser`         | Map the profile to user fields, sync or async. The result is spread over the default mapping; extra keys go to additional fields. |
-| `overrideUserInfoOnSignIn` | Also refresh an existing user from their profile on every sign-in, not only at sign-up. Needs `relays`. Defaults to `false`.        |
-| `rateLimit`                | Per-endpoint `{ window, max }` for `nonce`, `login` and `addPubkey`, in seconds and requests. Defaults: 10/60s, 3/10s and 5/60s.          |
-| `allowDynamicBaseURL`      | Start in production without `baseURL` or `BETTER_AUTH_URL`, binding signatures to each request's `Host`. Defaults to `false`.      |
-
-### Filling the user from the Nostr profile
-
-The profile options mirror `mapProfileToUser` and `overrideUserInfoOnSignIn` on Better Auth's social providers, so they behave the way you already know:
-
-```ts
-nostr({
-  relays: ["wss://relay.example.com"],
-  mapProfileToUser: ({ metadata }) => ({
-    name: metadata.display_name?.slice(0, 80),
-    lud16: metadata.lud16,
-  }),
-});
-```
-
-The default mapping, the counterpart of GitHub's `name || login` and `avatar_url`, takes `display_name` or else `name` (trimmed) and an `https:` `picture`. Whatever `mapProfileToUser` returns is spread over that, so you only return what you want to change. Extra keys are filtered through `user.additionalFields` the same way a social provider's are; keys that are not declared fields are dropped. Setting `relays` is the opt-in: without it the server never contacts a relay and the name stays the npub. A new user gets the mapped fields at sign-up; an existing user is only updated when `overrideUserInfoOnSignIn` is on, which costs a relay round-trip on every sign-in. Sign-up waits on the relay lookup for up to `relayTimeoutMs` (5 seconds by default), so lower it if sign-up latency matters.
-
-Two things differ from a social provider, both because kind `0` is a self-claimed, best-effort relay lookup rather than part of an OAuth handshake. The lookup is best effort, and one that fails, times out or finds nothing falls back to the npub instead of failing sign-in. And `email`, `emailVerified` and `id` are typed `never` in `NostrMappedUser`: identity is the signing pubkey, and the email stays `generateEmail`'s job. The server queries only your `relays`; it never follows relay hints or resolves NIP-05, since that would let user input pick the hosts it connects to.
-
-The plugin exports its schema, so the underlying adapter sets up indexes and the foreign key to `user` automatically.
-
-### Client exports
-
-`better-auth-nostr/client` also exports the signer primitives directly, so you can build the flow yourself: `createPrivateKeySigner`, `createExtensionSigner`, `createBunkerSigner`, `createNostrConnectSession`, `parseSecretKey`, the `NostrSigner` / `RemoteNostrSigner` types, and the `NostrProfile`, `NostrProfileMetadata` and `RelayOptions` types. `NostrSigner` is structurally compatible with `Signer` from `nostr-tools/signer` — a compile-time assertion in the source keeps it that way — so an existing signer implementation, including a bare `PlainKeySigner`, can be passed straight through.
+## Docs
+
+- [Getting started](https://leon-wbr.github.io/better-auth-nostr/): from install to a first sign-in and a second linked key, with the schema and every option.
+- [Guide](https://leon-wbr.github.io/better-auth-nostr/guide/): signers (NIP-07, nsec, NIP-46 remote signers), signing other events, profiles and relays, managing linked keys, and how sign-in works.
+- [Reference](https://leon-wbr.github.io/better-auth-nostr/reference/): endpoints, client actions, and error codes.
+- [API](https://leon-wbr.github.io/better-auth-nostr/api/): every export and option, generated from the JSDoc.
+- [Key loss and recovery](https://leon-wbr.github.io/better-auth-nostr/key-loss/): backup keys, recovery paths and key rotation, since Nostr has no protocol-level recovery yet.
+- [Support and versioning](https://leon-wbr.github.io/better-auth-nostr/support/): the support matrix and what a version number promises.
+
+The site follows `main`; the sources are in [docs/](docs/index.mdx).
 
 ## Development
 
@@ -311,19 +85,6 @@ Nobody bumps versions or tags releases by hand. PRs are squash-merged, so each P
 Merging the release PR is the release. `.github/workflows/release.yml` tags `vX.Y.Z` on main and creates the GitHub release. The publish job then waits for approval in the `npm` environment. Once approved, it typechecks, tests and builds, then publishes to npm through trusted publishing (OIDC). There is no token in the repository, and every tarball carries a provenance attestation.
 
 Running the release workflow manually (Actions → Release → Run workflow) publishes nothing. It performs the real OIDC token exchange through `npm publish --dry-run` and fails if npm doesn't hand back a token, which confirms that the trusted publisher entry still works.
-
-## Why It Matters
-
-Most Nostr logins today live in bespoke, one-off integrations. Packaging it as a Better Auth plugin lets teams:
-
-- add decentralized authentication next to their existing auth flows with a single import,
-- run Nostr-first apps on Better Auth without rebuilding session, cookie, and schema plumbing.
-
-## Project Status
-
-- Stage: early but stable for login and basic pubkey management.
-- Contributions that extend the feature set (e.g. pubkey revocation, multi-key UX) or polish the docs are welcome.
-- Profile sync from relays is already available: see [Filling the user from the Nostr profile](#filling-the-user-from-the-nostr-profile).
 
 ## Get Involved
 

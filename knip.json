@@ -1,5 +1,12 @@
 {
   "$schema": "https://unpkg.com/knip@latest/schema.json",
-  "entry": ["smoke/sign-in.ts"],
-  "ignore": ["examples/**"]
+  "workspaces": {
+    ".": {
+      "entry": ["smoke/sign-in.ts"],
+      "ignore": ["examples/**", "docs/**"]
+    },
+    "scripts/docs": {
+      "ignoreDependencies": ["@fontsource-variable/.+"]
+    }
+  }
 }
