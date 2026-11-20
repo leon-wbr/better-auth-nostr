@@ -1,4 +1,7 @@
-# Key loss and recovery
+---
+title: Key loss and recovery
+description: Backup keys, rotation and what an admin can do, since Nostr has no protocol-level recovery yet.
+---
 
 A Nostr key can't be reset. There is no "forgot password" link, and no merged NIP yet lets a key name its successor or revoke itself. Recovery is therefore up to your app: what a user can do after losing a key depends on what you let them set up before.
 

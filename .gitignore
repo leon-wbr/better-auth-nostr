@@ -7,3 +7,4 @@ coverage
 reports
 .stryker-tmp
 .wrangler
+.astro

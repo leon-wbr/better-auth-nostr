@@ -1,0 +1,55 @@
+/* Better Auth's look: neutral greys, a black-and-white accent, Geist, square edges. */
+:root {
+  --sl-font: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --sl-font-mono: "Geist Mono Variable", ui-monospace, monospace;
+  --sl-color-accent-low: #262626;
+  --sl-color-accent: #d4d4d4;
+  --sl-color-accent-high: #fafafa;
+  --sl-color-white: #fafafa;
+  --sl-color-gray-1: #e5e5e5;
+  --sl-color-gray-2: #d4d4d4;
+  --sl-color-gray-3: #a3a3a3;
+  --sl-color-gray-4: #737373;
+  --sl-color-gray-5: #262626;
+  --sl-color-gray-6: #171717;
+  --sl-color-black: #0a0a0a;
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #e5e5e5;
+  --sl-color-accent: #262626;
+  --sl-color-accent-high: #0a0a0a;
+  --sl-color-white: #0a0a0a;
+  --sl-color-gray-1: #171717;
+  --sl-color-gray-2: #262626;
+  --sl-color-gray-3: #525252;
+  --sl-color-gray-4: #737373;
+  --sl-color-gray-5: #d4d4d4;
+  --sl-color-gray-6: #f5f5f5;
+  --sl-color-gray-7: #fafafa;
+  --sl-color-black: #ffffff;
+}
+
+.sidebar-content a[aria-current="page"] {
+  background: var(--sl-color-gray-5);
+  color: var(--sl-color-white);
+}
+
+.sl-markdown-content :is(h2, h3) {
+  letter-spacing: -0.02em;
+}
+
+.sl-markdown-content table {
+  font-size: var(--sl-text-sm);
+}
+
+/* Long identifiers in prose cells may break, so error-code tables fit without scrolling; the first column keeps whole names. */
+.sl-markdown-content td:not(:first-child) code {
+  overflow-wrap: anywhere;
+}
+
+.expressive-code .frame,
+.starlight-aside,
+.sl-markdown-content :is(pre, table) {
+  border-radius: 0;
+}

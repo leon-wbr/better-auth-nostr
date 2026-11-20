@@ -54,3 +54,4 @@ jobs:
             echo "::error::Run npm run docs:generate and commit the result."
             exit 1
           fi
+      - run: npm run docs:build

@@ -1,12 +1,19 @@
 {
   "name": "better-auth-nostr-docs",
   "private": true,
-  "description": "Generates docs/api and the generated tables in docs/reference.md and docs/support.md. TypeDoc needs TypeScript 6, the root uses 7, so it lives in its own workspace.",
+  "description": "The docs site (Starlight, from docs/), and the generator of docs/api and the generated tables in docs/. TypeDoc needs TypeScript 6, the root uses 7, so it lives in its own workspace.",
   "type": "module",
   "scripts": {
-    "generate": "typedoc && node generate.ts"
+    "generate": "typedoc && node generate.ts",
+    "dev": "astro dev",
+    "build": "astro build"
   },
   "devDependencies": {
+    "@astrojs/markdown-remark": "^7.3.10",
+    "@astrojs/starlight": "^0.43.1",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "astro": "^7.4.13",
     "typedoc": "^0.28.20",
     "typedoc-plugin-markdown": "^4.14.1",
     "typescript": "~6.0.0"

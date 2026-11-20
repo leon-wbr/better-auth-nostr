@@ -1,6 +1,9 @@
-# Reference
+---
+title: Reference
+description: Every endpoint, client action and error code of the plugin.
+---
 
-The endpoints, client actions, error codes and schema of the plugin. The [guide](guide.md) explains how the pieces fit together.
+The endpoints, client actions and error codes of the plugin; the schema and options are on [Getting started](index.mdx#schema). The [guide](guide.md) explains how the pieces fit together.
 
 ## API
 
@@ -172,21 +175,3 @@ The client reports these before or instead of a request, in the shape Better Aut
 | `NOSTR_UNKNOWN_ERROR` | 400 | Anything else, such as a signer that refuses, an invalid `nsec` or a missing `baseURL`. | Read `error.message`. Outside a browser, set `baseURL` on the client. |
 
 <!-- /generated:client-errors -->
-
-## Schema
-
-The plugin adds one model, `nostrPubkey` (renamed with `modelName`). Each row links one Nostr key, `publicKey` in hex, to one user; a user can have several. Better Auth adds the `id` primary key, `name` is the label from `addPubkey({ name })`, and `lastUsedAt` the time of the key's latest sign-in. Generated from the plugin's `schema`:
-
-<!-- generated:schema -->
-
-| Field | Type | Required | Unique | Indexed | References |
-| --- | --- | --- | --- | --- | --- |
-| `name` | string |  |  |  |  |
-| `publicKey` | string | yes | yes | yes |  |
-| `userId` | string | yes |  | yes | `user.id`, on delete cascade |
-| `createdAt` | date | yes |  |  |  |
-| `lastUsedAt` | date |  |  |  |  |
-
-<!-- /generated:schema -->
-
-Rename columns with `fields`. Each key also has a row in Better Auth's own `account` table, with `providerId` `"nostr"` and the hex key as `accountId`; keys linked before that get theirs [on the user's next sign-in](guide.md#managing-linked-keys), until 1.0. Nonces are kept in Better Auth's `verification` table, under identifiers starting with `nostr:`, and are deleted when used.

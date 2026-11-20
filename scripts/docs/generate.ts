@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { NOSTR_ERROR_CODES, nostr } from "../../dist/index.mjs";
 import { ERROR_DOCS } from "./error-codes.ts";
 
@@ -99,10 +99,44 @@ const SUPPORT: [string, string, string, string?][] = [
   ],
 ];
 
+// Starlight takes a page's title from its frontmatter, not its first heading.
+for (const file of readdirSync(new URL("docs/api", root), {
+  recursive: true,
+  encoding: "utf8",
+})) {
+  const path = `docs/api/${file}`;
+  if (path.endsWith(".md")) {
+    writeFileSync(
+      new URL(path, root),
+      read(path).replace(/^# (.*)\n/, "---\ntitle: $1\n---\n"),
+    );
+  }
+}
+
+const clientApi = read("docs/api/better-auth-nostr/client.md");
+const optionsTable = (name: string) =>
+  (clientApi.split(`\n### ${name}\n`)[1]?.split("\n### ")[0] ?? "")
+    .split("\n")
+    .filter((line) => line.startsWith("|"))
+    // Without the Type column, which the API page has.
+    .map((line) =>
+      line
+        .split(/(?<!\\) \| /)
+        .toSpliced(1, 1)
+        .join(" | "),
+    )
+    .join("\n")
+    .replaceAll(/<a id="[^"]*"><\/a> /g, "")
+    .replaceAll("](#", "](api/better-auth-nostr/client.md#");
+
 const blocks: Record<string, Record<string, string>> = {
   "docs/reference.md": {
     "server-errors": errorTable("server"),
     "client-errors": errorTable("client"),
+  },
+  "docs/index.mdx": {
+    "server-options": optionsTable("NostrOptions"),
+    "client-options": optionsTable("RelayOptions"),
     schema: table(
       ["Field", "Type", "Required", "Unique", "Indexed", "References"],
       Object.entries(nostr().schema.nostrPubkey.fields).map(
@@ -135,11 +169,12 @@ const blocks: Record<string, Record<string, string>> = {
 for (const [file, contents] of Object.entries(blocks)) {
   let markdown = read(file);
   for (const [name, content] of Object.entries(contents)) {
+    // `<!-- generated:x -->` in Markdown, `{/* generated:x */}` in MDX.
     const block = new RegExp(
-      `(<!-- generated:${name} -->)[\\s\\S]*?(<!-- /generated:${name} -->)`,
+      `(\\S+ generated:${name} \\S+)[\\s\\S]*?(\\S+ /generated:${name} \\S+)`,
     );
     if (!block.test(markdown)) throw new Error(`No ${name} block in ${file}`);
-    // Kramdown only parses a table set off from the comments by blank lines.
+    // A table only parses when blank lines set it off from the markers.
     markdown = markdown.replace(
       block,
       (_, start, end) => `${start}\n\n${content}\n\n${end}`,

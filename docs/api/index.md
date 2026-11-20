@@ -1,4 +1,6 @@
-# API
+---
+title: API
+---
 
 ## Modules
 

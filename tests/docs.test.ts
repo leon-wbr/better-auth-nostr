@@ -7,7 +7,7 @@ import * as serverExports from "../src/index";
 const root = resolve(import.meta.dirname, "..");
 const docsDir = join(root, "docs");
 const docs = readdirSync(docsDir, { recursive: true, encoding: "utf8" })
-  .filter((file) => file.endsWith(".md"))
+  .filter((file) => /\.mdx?$/.test(file))
   .map((file) => join(docsDir, file));
 const read = (path: string) => readFileSync(path, "utf8");
 const reference = read(join(docsDir, "reference.md"));
@@ -50,17 +50,6 @@ describe("docs/reference.md", () => {
     );
     expect(actions).toContain("nostr.getProfile");
     expect(undocumentedHeadings(actions)).toEqual([]);
-  });
-});
-
-describe("docs/", () => {
-  it.each(
-    docs.map((path) => [relative(root, path), path]),
-  )("%s has no Liquid tags, which GitHub Pages' Jekyll would evaluate", (_, path) => {
-    const liquid = read(path)
-      .split("\n")
-      .filter((line) => /\{\{|\{%/.test(line));
-    expect(liquid).toEqual([]);
   });
 });
 

@@ -1,6 +1,7 @@
-# Support and versioning
-
-What this library runs on, how that is checked, and what a version number promises.
+---
+title: Support and versioning
+description: What this library runs on, how that is checked, and what a version number promises.
+---
 
 ## Support matrix
 

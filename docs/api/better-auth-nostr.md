@@ -1,4 +1,6 @@
-# better-auth-nostr
+---
+title: better-auth-nostr
+---
 
 The server plugin, imported from `better-auth-nostr`.
 

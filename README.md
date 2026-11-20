@@ -23,7 +23,7 @@ Most Nostr logins live in bespoke, one-off integrations. As a Better Auth plugin
 npm install better-auth better-auth-nostr
 ```
 
-Supports Better Auth `^1.7`, tested at 1.7.0 and the latest release on Node 22 and 24, Bun, Deno and Cloudflare Workers, against SQLite and Postgres. The [support matrix](https://leon-wbr.github.io/better-auth-nostr/support.html) has the details.
+Supports Better Auth `^1.7`, tested at 1.7.0 and the latest release on Node 22 and 24, Bun, Deno and Cloudflare Workers, against SQLite and Postgres. The [support matrix](https://leon-wbr.github.io/better-auth-nostr/support/) has the details.
 
 ## Quick start
 
@@ -51,14 +51,14 @@ const { data, error } = await authClient.signIn.nostr();
 
 ## Docs
 
-- [Getting started](https://leon-wbr.github.io/better-auth-nostr/): from install to a first sign-in and a second linked key.
-- [Guide](https://leon-wbr.github.io/better-auth-nostr/guide.html): signers (NIP-07, nsec, NIP-46 remote signers), signing other events, profiles and relays, managing linked keys, and how sign-in works.
-- [Reference](https://leon-wbr.github.io/better-auth-nostr/reference.html): endpoints, client actions, error codes and the schema.
+- [Getting started](https://leon-wbr.github.io/better-auth-nostr/): from install to a first sign-in and a second linked key, with the schema and every option.
+- [Guide](https://leon-wbr.github.io/better-auth-nostr/guide/): signers (NIP-07, nsec, NIP-46 remote signers), signing other events, profiles and relays, managing linked keys, and how sign-in works.
+- [Reference](https://leon-wbr.github.io/better-auth-nostr/reference/): endpoints, client actions, and error codes.
 - [API](https://leon-wbr.github.io/better-auth-nostr/api/): every export and option, generated from the JSDoc.
-- [Key loss and recovery](https://leon-wbr.github.io/better-auth-nostr/key-loss.html): backup keys, recovery paths and key rotation, since Nostr has no protocol-level recovery yet.
-- [Support and versioning](https://leon-wbr.github.io/better-auth-nostr/support.html): the support matrix and what a version number promises.
+- [Key loss and recovery](https://leon-wbr.github.io/better-auth-nostr/key-loss/): backup keys, recovery paths and key rotation, since Nostr has no protocol-level recovery yet.
+- [Support and versioning](https://leon-wbr.github.io/better-auth-nostr/support/): the support matrix and what a version number promises.
 
-The site follows `main`; the sources are in [docs/](docs/index.md).
+The site follows `main`; the sources are in [docs/](docs/index.mdx).
 
 ## Development
 

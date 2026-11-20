@@ -1,4 +1,6 @@
-# better-auth-nostr/client
+---
+title: better-auth-nostr/client
+---
 
 The client plugin and signers, imported from `better-auth-nostr/client`.
 

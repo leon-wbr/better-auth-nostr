@@ -1,6 +1,9 @@
-# Guide
+---
+title: Guide
+description: Signers, profiles and relays, linked keys, and what the server checks.
+---
 
-[Getting started](index.md) gets a first sign-in working. This page explains the parts around it: where signatures come from, how profiles and relays work, and what the server checks. Every option named here is listed in the [API pages](api/index.md).
+[Getting started](index.mdx) gets a first sign-in working. This page explains the parts around it: where signatures come from, how profiles and relays work, and what the server checks. Every option named here is listed in the [API pages](api/index.md).
 
 ## Signers
 
