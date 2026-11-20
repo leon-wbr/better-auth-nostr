@@ -8,4 +8,4 @@
 - The release PR is opened with `GITHUB_TOKEN`, so no checks run on it; it is merged with the admin bypass of the `main` ruleset.
 - `workflow_dispatch` on release.yml publishes nothing: it dry-runs the trusted-publisher check.
 - `v*` tags are immutable: never move, delete or reuse one, and never publish a version npm already has.
-- The workflow files and `release-please-config.json` are synced from Leon's platform repo; change them there, so the libraries stay alike.
+- The workflow files and `release-please-config.json` are this repo's own; edit them here. Pin every action to a full commit SHA with its version in a comment (`# vX.Y.Z`).

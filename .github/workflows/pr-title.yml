@@ -1,4 +1,3 @@
-# Synced from the platform repo (templates/common). Change it there, then sync.
 name: PR title
 
 # PRs are squash-merged with the title as the commit message, so the title is what
