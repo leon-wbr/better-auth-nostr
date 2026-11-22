@@ -49,13 +49,11 @@
   },
   "typesVersions": {
     "*": {
+      "client": [
+        "./dist/client.d.mts"
+      ],
       "*": [
         "./dist/index.d.mts"
-      ]
-    },
-    "client": {
-      "*": [
-        "./dist/client.d.mts"
       ]
     }
   },

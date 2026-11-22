@@ -37,6 +37,7 @@ import {
   withTimeout,
 } from "./signer";
 import type { NostrPubkey, RelayOptions } from "./types";
+import { PACKAGE_VERSION } from "./version";
 
 type ActionError = {
   code: NostrErrorCode;
@@ -319,6 +320,7 @@ export const nostrClient = <O extends RelayOptions = RelayOptions>(
 ) => {
   return {
     id: "nostr",
+    version: PACKAGE_VERSION,
     /** @hidden */
     $InferServerPlugin: {} as InferredServerPlugin,
     /** @hidden */

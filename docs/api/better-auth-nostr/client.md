@@ -176,18 +176,27 @@ The server options of `nostr(options?)`. All are optional.
 | ------ | ------ | ------ | ------ |
 | <a id="property-relays-2"></a> `relays?` | \[`string`, `...string[]`\] | `none` | Relays this app reads from, at least one. This library never picks relays for you. On the server, a new user is filled from their kind `0` profile at sign-up (best effort; sign-up waits on the lookup up to `relayTimeoutMs`); when unset, the server never contacts a relay. On the client, `nostr.getProfile` reads from them; without them it is missing from the client's types and returns `NOSTR_RELAYS_NOT_CONFIGURED`. |
 | <a id="property-relaytimeoutms-1"></a> `relayTimeoutMs?` | `number` | `5000` | How long to wait on relays, in milliseconds. |
-| <a id="property-disablesignup"></a> ~~`disableSignUp?`~~ | `boolean` | `undefined` | **Deprecated** Has no effect. Use `disableImplicitSignUp` to reject pubkeys that are not linked to a user yet. |
-| <a id="property-disableimplicitsignup"></a> `disableImplicitSignUp?` | `boolean` | `false` | Reject sign-ins from keys that are not linked to a user yet (`NOSTR_PUBKEY_NOT_REGISTERED`) instead of creating a user. |
-| <a id="property-modelname"></a> `modelName?` | `string` | `"nostrPubkey"` | Table name of the pubkey model. |
+| <a id="property-disablesignup"></a> `disableSignUp?` | `boolean` | `false` | Reject sign-ins from keys that are not linked to a user yet (`NOSTR_PUBKEY_NOT_REGISTERED`) instead of creating a user. |
+| <a id="property-disableimplicitsignup"></a> ~~`disableImplicitSignUp?`~~ | `boolean` | `undefined` | **Deprecated** Use `disableSignUp`; removed in 1.0. |
+| <a id="property-schema"></a> `schema?` | `object` | `undefined` | Rename the pubkey model and its columns, for an existing table, as with Better Auth's own plugins. **Example** ``{ nostrPubkey: { modelName: "nostr_keys", fields: { publicKey: "pub_key" } } }`` |
+| `schema.nostrPubkey?` | `object` | `...` | - |
+| `schema.nostrPubkey.modelName?` | `string` | `undefined` | - |
+| `schema.nostrPubkey.fields?` | `object` | `undefined` | - |
+| `schema.nostrPubkey.fields.name?` | `string` | `...` | - |
+| `schema.nostrPubkey.fields.publicKey?` | `string` | `...` | - |
+| `schema.nostrPubkey.fields.userId?` | `string` | `...` | - |
+| `schema.nostrPubkey.fields.createdAt?` | `string` | `...` | - |
+| `schema.nostrPubkey.fields.lastUsedAt?` | `string` | `...` | - |
+| <a id="property-modelname"></a> ~~`modelName?`~~ | `string` | `undefined` | **Deprecated** Use `schema.nostrPubkey.modelName`; removed in 1.0. |
 | <a id="property-noncettlms"></a> `nonceTtlMs?` | `number` | `300000 (5 minutes)` | How long an issued nonce stays valid, in milliseconds. |
 | <a id="property-getnonce"></a> `getNonce?` | () => `Promise`\<`string`\> | `16 random bytes as hex` | Your own nonce generator. Each call must return a fresh value of 8–249 characters from `[A-Za-z0-9_-]`; anything else makes `/nostr/nonce` fail. |
-| <a id="property-generateemail"></a> `generateEmail?` | (`npub`, `pubkey`) => `string` \| `Promise`\<`string`\> | `npub1…@nostr.local` | The email of a user created at sign-in, sync or async. Receives the npub and the hex pubkey. |
-| <a id="property-fields"></a> `fields?` | `object` | `undefined` | Column names of the pubkey model, for an existing table: any of `name`, `publicKey`, `userId` and `createdAt`. |
-| `fields.name?` | `string` | `undefined` | - |
-| `fields.publicKey?` | `string` | `undefined` | - |
-| `fields.userId?` | `string` | `undefined` | - |
-| `fields.createdAt?` | `string` | `undefined` | - |
-| `fields.lastUsedAt?` | `string` | `undefined` | - |
+| <a id="property-generateemail"></a> `generateEmail?` | (`npub`, `pubkey`) => `string` \| `Promise`\<`string`\> | `npub1…@nostr.placeholder.invalid` | The email of a user created at sign-in, sync or async. Receives the npub and the hex pubkey. |
+| <a id="property-fields"></a> ~~`fields?`~~ | `object` | `undefined` | **Deprecated** Use `schema.nostrPubkey.fields`; removed in 1.0. |
+| `fields.name?` | `string` | `...` | - |
+| `fields.publicKey?` | `string` | `...` | - |
+| `fields.userId?` | `string` | `...` | - |
+| `fields.createdAt?` | `string` | `...` | - |
+| `fields.lastUsedAt?` | `string` | `...` | - |
 | <a id="property-mapprofiletouser"></a> `mapProfileToUser?` | (`profile`) => [`NostrMappedUser`](#nostrmappeduser) \| `Promise`\<[`NostrMappedUser`](#nostrmappeduser)\> | `display_name` or `name`, and an `https:` `picture` | Maps a `NostrProfile` to user fields, sync or async. The result is spread over the default mapping; extra keys go to `user.additionalFields`; `email`, `emailVerified` and `id` are not allowed. |
 | <a id="property-ratelimit"></a> `rateLimit?` | `Partial`\<`Record`\<`"nonce"` \| `"login"` \| `"addPubkey"`, \{ `window`: `number`; `max`: `number`; \}\>\> | `nonce 10 per 60s, login 3 per 10s, add-pubkey 5 per 60s` | Rate limits per endpoint, in Better Auth's `{ window, max }` form (seconds, requests). Like every Better Auth rate limit, they apply only where `rateLimit.enabled` is on, by default in production. |
 | <a id="property-allowdynamicbaseurl"></a> `allowDynamicBaseURL?` | `boolean` | `false` | Accept a server without `baseURL` or `BETTER_AUTH_URL`, whose URL, and so the URL NIP-98 signatures are bound to, comes from each request's `Host` header. Without it the plugin warns at init, and refuses to start in production. |
@@ -355,6 +364,7 @@ The client plugin. Its options are `RelayOptions`.
 | Name | Type | Default value |
 | ------ | ------ | ------ |
 | `id` | `"nostr"` | `"nostr"` |
+| `version` | `string` | `PACKAGE_VERSION` |
 
 ***
 

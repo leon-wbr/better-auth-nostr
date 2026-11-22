@@ -4,6 +4,7 @@ import {
   runWithTransaction,
 } from "@better-auth/core/context";
 import type { DBAdapter } from "@better-auth/core/db/adapter";
+import { createPlaceholderEmail } from "@better-auth/core/utils/email";
 import {
   BASE_ERROR_CODES,
   BetterAuthError,
@@ -310,7 +311,8 @@ const signUp = async (
 ): Promise<{ user: User; nostrPubkey: NostrPubkey }> => {
   const npub = nip19.npubEncode(pubkey);
   const email =
-    (await opts?.generateEmail?.(npub, pubkey)) ?? `${npub}@nostr.local`;
+    (await opts?.generateEmail?.(npub, pubkey)) ??
+    createPlaceholderEmail({ identifier: npub, namespace: "nostr" });
   // Fetched before the transaction, so the relay wait never holds it open.
   const userInfo = await userInfoFromProfile(ctx, opts, pubkey, "create");
 
@@ -436,7 +438,7 @@ const signIn = async (
   let user: User | null = null;
 
   if (!nostrPubkey) {
-    if (opts?.disableImplicitSignUp) {
+    if (opts?.disableSignUp || opts?.disableImplicitSignUp) {
       throw APIError.from(
         "UNAUTHORIZED",
         NOSTR_ERROR_CODES.NOSTR_PUBKEY_NOT_REGISTERED,

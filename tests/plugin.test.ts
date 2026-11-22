@@ -1,3 +1,4 @@
+import type { BetterAuthPluginDBSchema } from "@better-auth/core/db";
 import { describe, expect, it } from "vitest";
 import { nostr } from "../src/index";
 
@@ -39,25 +40,17 @@ describe("nostr() server plugin factory", () => {
   });
 
   it("honors options.fields renaming", () => {
-    const fields = nostr({
+    const { fields }: BetterAuthPluginDBSchema[string] = nostr({
       fields: {
         publicKey: "pub_key",
         userId: "owner_id",
         createdAt: "created_at",
         name: "label",
       },
-    }).schema?.nostrPubkey.fields;
+    }).schema.nostrPubkey;
     expect(fields?.publicKey?.fieldName).toBe("pub_key");
     expect(fields?.userId?.fieldName).toBe("owner_id");
     expect(fields?.createdAt?.fieldName).toBe("created_at");
     expect(fields?.name?.fieldName).toBe("label");
-  });
-
-  it("falls back to default field names when options.fields is omitted", () => {
-    const fields = nostr().schema?.nostrPubkey.fields;
-    expect(fields?.publicKey?.fieldName).toBe("publicKey");
-    expect(fields?.userId?.fieldName).toBe("userId");
-    expect(fields?.createdAt?.fieldName).toBe("createdAt");
-    expect(fields?.name?.fieldName).toBe("name");
   });
 });

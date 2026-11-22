@@ -33,7 +33,7 @@ Issues a single-use nonce bound to a public key. No session needed.
 
 ### POST /sign-in/nostr
 
-Signs in with a NIP-98 token, creating the user on first sign-in unless `disableImplicitSignUp` is set. Sets the session cookie.
+Signs in with a NIP-98 token, creating the user on first sign-in unless `disableSignUp` is set. Sets the session cookie.
 
 - Header: `Authorization: Nostr <base64 event>`, a kind `27235` event signed for this endpoint's absolute URL, method `post` and the body's hash.
 - Body: `{ nonce }`, from `/nostr/nonce` for the same key.
@@ -155,7 +155,7 @@ Besides these, the endpoints answer with Better Auth's own `VALIDATION_ERROR` (4
 | `NOSTR_INVALID_EVENT` | 401 | The event's signature, kind, URL, method or payload is wrong. | Make the client's `baseURL` and `basePath` match the server's, so the event is signed for the URL the server checks. |
 | `NOSTR_EVENT_EXPIRED` | 401 | The event was signed more than 60 seconds before or after now. | Sign again, and check the signing device's clock. |
 | `NOSTR_INVALID_NONCE` | 400 or 401 | The nonce is blank (400), or unknown, used, expired or issued for another key (401). | Fetch a new nonce for the same key and sign again; the actions do this on every call. |
-| `NOSTR_PUBKEY_NOT_REGISTERED` | 401 | `disableImplicitSignUp` is set and the key has no user. | Sign in another way and link the key with `nostr.addPubkey` first. |
+| `NOSTR_PUBKEY_NOT_REGISTERED` | 401 | `disableSignUp` is set and the key has no user. | Sign in another way and link the key with `nostr.addPubkey` first. |
 | `NOSTR_PUBKEY_LINKED_TO_OTHER_USER` | 409 | `addPubkey` for a key another user owns. | Sign in with that key to reach the account that owns it. |
 | `NOSTR_FAILED_TO_CREATE_PUBKEY` | 500 | Storing the key failed. | Check the server log and the database, then retry. |
 | `NOSTR_PUBKEY_NOT_FOUND` | 404 | `updatePubkey` or `removePubkey` for a key id the user does not own. | Take the id from `nostr.listPubkeys` for the signed-in user. |

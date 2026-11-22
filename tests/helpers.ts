@@ -19,6 +19,7 @@ export const createTestAuth = (
   options?: NostrOptions,
   {
     plugins = [],
+    logger,
     user,
     databaseHooks,
     rateLimit,
@@ -29,6 +30,7 @@ export const createTestAuth = (
   }: Pick<
     BetterAuthOptions,
     | "plugins"
+    | "logger"
     | "user"
     | "databaseHooks"
     | "database"
@@ -40,6 +42,7 @@ export const createTestAuth = (
   } = {},
 ) => {
   return betterAuth({
+    logger,
     user,
     databaseHooks,
     rateLimit,

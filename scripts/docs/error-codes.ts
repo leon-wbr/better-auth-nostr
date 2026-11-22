@@ -43,7 +43,7 @@ export const ERROR_DOCS: Record<NostrErrorCode, ErrorDoc> = {
   NOSTR_PUBKEY_NOT_REGISTERED: {
     from: "server",
     status: "401",
-    when: "`disableImplicitSignUp` is set and the key has no user.",
+    when: "`disableSignUp` is set and the key has no user.",
     fix: "Sign in another way and link the key with `nostr.addPubkey` first.",
   },
   NOSTR_PUBKEY_LINKED_TO_OTHER_USER: {

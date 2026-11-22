@@ -106,7 +106,7 @@ const { data, error } = await authClient.signIn.nostr();
 if (error) console.error(error.code, error.message);
 ```
 
-The first sign-in with a new key creates a user, named after the npub and with a placeholder email `npub1…@nostr.local`. Set [`disableImplicitSignUp`](#options) to allow only keys that are already linked, or [`generateEmail`](#options) to choose the email. The action never throws: a failure comes back as `error`, with a stable [`error.code`](reference.md#error-codes).
+The first sign-in with a new key creates a user, named after the npub and with Better Auth's placeholder email `npub1…@nostr.placeholder.invalid`. Set [`disableSignUp`](#options) to allow only keys that are already linked, or [`generateEmail`](#options) to choose the email. The action never throws: a failure comes back as `error`, with a stable [`error.code`](reference.md#error-codes).
 
 No extension? Pass `{ nsec }` or a NIP-46 remote signer instead; the [guide](guide.md#signers) shows each.
 
@@ -150,7 +150,7 @@ Each entry is `{ id, publicKey, npub, name, createdAt, lastUsedAt }`. Removing n
 
 ## Schema
 
-The plugin adds one model, `nostrPubkey` (renamed with `modelName`). Each row links one Nostr key, `publicKey` in hex, to one user; a user can have several. Better Auth adds the `id` primary key, `name` is the label from `addPubkey({ name })`, and `lastUsedAt` the time of the key's latest sign-in. Generated from the plugin's `schema`:
+The plugin adds one model, `nostrPubkey`. Each row links one Nostr key, `publicKey` in hex, to one user; a user can have several. Better Auth adds the `id` primary key, `name` is the label from `addPubkey({ name })`, and `lastUsedAt` the time of the key's latest sign-in. Generated from the plugin's `schema`:
 
 {/* generated:schema */}
 
@@ -164,7 +164,7 @@ The plugin adds one model, `nostrPubkey` (renamed with `modelName`). Each row li
 
 {/* /generated:schema */}
 
-Rename columns with `fields`. Each key also has a row in Better Auth's own `account` table, with `providerId` `"nostr"` and the hex key as `accountId`; keys linked before that get theirs [on the user's next sign-in](guide.md#managing-linked-keys), until 1.0. Nonces are kept in Better Auth's `verification` table, under identifiers starting with `nostr:`, and are deleted when used.
+Rename the model or its columns with Better Auth's `schema` option, as for its own plugins: `nostr({ schema: { nostrPubkey: { modelName: "nostr_keys", fields: { publicKey: "pub_key" } } } })`. Each key also has a row in Better Auth's own `account` table, with `providerId` `"nostr"` and the hex key as `accountId`; keys linked before that get theirs [on the user's next sign-in](guide.md#managing-linked-keys), until 1.0. Nonces are kept in Better Auth's `verification` table, under identifiers starting with `nostr:`, and are deleted when used.
 
 ## Options
 
@@ -178,18 +178,27 @@ Rename columns with `fields`. Each key also has a row in Better Auth's own `acco
 | ------ | ------ | ------ |
 | `relays?` | `none` | Relays this app reads from, at least one. This library never picks relays for you. On the server, a new user is filled from their kind `0` profile at sign-up (best effort; sign-up waits on the lookup up to `relayTimeoutMs`); when unset, the server never contacts a relay. On the client, `nostr.getProfile` reads from them; without them it is missing from the client's types and returns `NOSTR_RELAYS_NOT_CONFIGURED`. |
 | `relayTimeoutMs?` | `5000` | How long to wait on relays, in milliseconds. |
-| ~~`disableSignUp?`~~ | `undefined` | **Deprecated** Has no effect. Use `disableImplicitSignUp` to reject pubkeys that are not linked to a user yet. |
-| `disableImplicitSignUp?` | `false` | Reject sign-ins from keys that are not linked to a user yet (`NOSTR_PUBKEY_NOT_REGISTERED`) instead of creating a user. |
-| `modelName?` | `"nostrPubkey"` | Table name of the pubkey model. |
+| `disableSignUp?` | `false` | Reject sign-ins from keys that are not linked to a user yet (`NOSTR_PUBKEY_NOT_REGISTERED`) instead of creating a user. |
+| ~~`disableImplicitSignUp?`~~ | `undefined` | **Deprecated** Use `disableSignUp`; removed in 1.0. |
+| `schema?` | `undefined` | Rename the pubkey model and its columns, for an existing table, as with Better Auth's own plugins. **Example** ``{ nostrPubkey: { modelName: "nostr_keys", fields: { publicKey: "pub_key" } } }`` |
+| `schema.nostrPubkey?` | `...` | - |
+| `schema.nostrPubkey.modelName?` | `undefined` | - |
+| `schema.nostrPubkey.fields?` | `undefined` | - |
+| `schema.nostrPubkey.fields.name?` | `...` | - |
+| `schema.nostrPubkey.fields.publicKey?` | `...` | - |
+| `schema.nostrPubkey.fields.userId?` | `...` | - |
+| `schema.nostrPubkey.fields.createdAt?` | `...` | - |
+| `schema.nostrPubkey.fields.lastUsedAt?` | `...` | - |
+| ~~`modelName?`~~ | `undefined` | **Deprecated** Use `schema.nostrPubkey.modelName`; removed in 1.0. |
 | `nonceTtlMs?` | `300000 (5 minutes)` | How long an issued nonce stays valid, in milliseconds. |
 | `getNonce?` | `16 random bytes as hex` | Your own nonce generator. Each call must return a fresh value of 8–249 characters from `[A-Za-z0-9_-]`; anything else makes `/nostr/nonce` fail. |
-| `generateEmail?` | `npub1…@nostr.local` | The email of a user created at sign-in, sync or async. Receives the npub and the hex pubkey. |
-| `fields?` | `undefined` | Column names of the pubkey model, for an existing table: any of `name`, `publicKey`, `userId` and `createdAt`. |
-| `fields.name?` | `undefined` | - |
-| `fields.publicKey?` | `undefined` | - |
-| `fields.userId?` | `undefined` | - |
-| `fields.createdAt?` | `undefined` | - |
-| `fields.lastUsedAt?` | `undefined` | - |
+| `generateEmail?` | `npub1…@nostr.placeholder.invalid` | The email of a user created at sign-in, sync or async. Receives the npub and the hex pubkey. |
+| ~~`fields?`~~ | `undefined` | **Deprecated** Use `schema.nostrPubkey.fields`; removed in 1.0. |
+| `fields.name?` | `...` | - |
+| `fields.publicKey?` | `...` | - |
+| `fields.userId?` | `...` | - |
+| `fields.createdAt?` | `...` | - |
+| `fields.lastUsedAt?` | `...` | - |
 | `mapProfileToUser?` | `display_name` or `name`, and an `https:` `picture` | Maps a `NostrProfile` to user fields, sync or async. The result is spread over the default mapping; extra keys go to `user.additionalFields`; `email`, `emailVerified` and `id` are not allowed. |
 | `rateLimit?` | `nonce 10 per 60s, login 3 per 10s, add-pubkey 5 per 60s` | Rate limits per endpoint, in Better Auth's `{ window, max }` form (seconds, requests). Like every Better Auth rate limit, they apply only where `rateLimit.enabled` is on, by default in production. |
 | `allowDynamicBaseURL?` | `false` | Accept a server without `baseURL` or `BETTER_AUTH_URL`, whose URL, and so the URL NIP-98 signatures are bound to, comes from each request's `Host` header. Without it the plugin warns at init, and refuses to start in production. |

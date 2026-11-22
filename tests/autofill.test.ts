@@ -94,7 +94,9 @@ describe("profile fill at sign-up", () => {
   it("never takes the email from metadata", async () => {
     const keypair = makeKeypair();
     publishProfile(keypair, { name: "alice", nip05: "alice@example.com" });
-    expect((await signUp(keypair)).email.endsWith("@nostr.local")).toBe(true);
+    expect(
+      (await signUp(keypair)).email.endsWith("@nostr.placeholder.invalid"),
+    ).toBe(true);
   });
 
   it.each([
@@ -177,7 +179,7 @@ describe("mapProfileToUser", () => {
       mapProfileToUser: () =>
         ({ email: "victim@example.com", id: "taken" }) as never,
     });
-    expect(user.email.endsWith("@nostr.local")).toBe(true);
+    expect(user.email.endsWith("@nostr.placeholder.invalid")).toBe(true);
     expect(user.id).not.toBe("taken");
   });
 
