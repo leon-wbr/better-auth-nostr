@@ -25,7 +25,7 @@ If the main key is lost, the user signs in with the backup and removes the lost 
 
 Better Auth's other sign-in methods work next to Nostr on the same user. Enable [email and password](https://www.better-auth.com/docs/authentication/email-password), a [magic link](https://www.better-auth.com/docs/plugins/magic-link) or a [passkey](https://www.better-auth.com/docs/plugins/passkey), and let a signed-in Nostr user add one. Each adds an `account` row, which the last-key rule counts as another way in.
 
-Implicit sign-up gives Nostr users a placeholder email, `<npub>@nostr.local` by default. It can't receive mail, so before relying on email recovery, have the user set a real address and verify it, or use `generateEmail` to assign one you can reach.
+Implicit sign-up gives Nostr users a placeholder email, `<npub>@nostr.placeholder.invalid` by default (`<npub>@nostr.local` for users created before 0.9). It can't receive mail, so before relying on email recovery, have the user set a real address and verify it, or use `generateEmail` to assign one you can reach.
 
 ## Rotating to a new key
 

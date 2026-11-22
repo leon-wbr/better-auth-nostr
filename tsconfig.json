@@ -5,6 +5,7 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "esModuleInterop": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
     "noUncheckedIndexedAccess": true,

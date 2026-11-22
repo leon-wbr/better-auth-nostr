@@ -1,4 +1,6 @@
+import type { InferOptionSchema } from "better-auth/types";
 import type { NostrProfile } from "./profile";
+import type { NostrSchema } from "./schema";
 
 /** `relays` and `relayTimeoutMs`: the client options of `nostrClient(options?)`, shared with the server options. */
 export interface RelayOptions {
@@ -38,23 +40,22 @@ export type NostrMappedUser = {
 /** The server options of `nostr(options?)`. All are optional. */
 export interface NostrOptions extends RelayOptions {
   /**
-   * @deprecated Has no effect. Use `disableImplicitSignUp` to reject pubkeys
-   * that are not linked to a user yet.
-   */
-  // TODO: implement requestSignup
-  disableSignUp?: boolean;
-  /**
    * Reject sign-ins from keys that are not linked to a user yet
    * (`NOSTR_PUBKEY_NOT_REGISTERED`) instead of creating a user.
    *
    * @defaultValue false
    */
+  disableSignUp?: boolean;
+  /** @deprecated Use `disableSignUp`; removed in 1.0. */
   disableImplicitSignUp?: boolean;
   /**
-   * Table name of the pubkey model.
+   * Rename the pubkey model and its columns, for an existing table, as with
+   * Better Auth's own plugins.
    *
-   * @defaultValue "nostrPubkey"
+   * @example `{ nostrPubkey: { modelName: "nostr_keys", fields: { publicKey: "pub_key" } } }`
    */
+  schema?: InferOptionSchema<NostrSchema>;
+  /** @deprecated Use `schema.nostrPubkey.modelName`; removed in 1.0. */
   modelName?: string;
   /**
    * How long an issued nonce stays valid, in milliseconds.
@@ -73,17 +74,13 @@ export interface NostrOptions extends RelayOptions {
    * The email of a user created at sign-in, sync or async. Receives the npub
    * and the hex pubkey.
    *
-   * @defaultValue `npub1…@nostr.local`
+   * @defaultValue `npub1…@nostr.placeholder.invalid`
    */
   generateEmail?: (npub: string, pubkey: string) => string | Promise<string>;
-  /** Column names of the pubkey model, for an existing table: any of `name`, `publicKey`, `userId` and `createdAt`. */
-  fields?: {
-    name?: string;
-    publicKey?: string;
-    userId?: string;
-    createdAt?: string;
-    lastUsedAt?: string;
-  };
+  /** @deprecated Use `schema.nostrPubkey.fields`; removed in 1.0. */
+  fields?: NonNullable<
+    NonNullable<InferOptionSchema<NostrSchema>["nostrPubkey"]>["fields"]
+  >;
   /**
    * Maps a `NostrProfile` to user fields, sync or async. The result is spread
    * over the default mapping; extra keys go to `user.additionalFields`;

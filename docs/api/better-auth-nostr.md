@@ -65,6 +65,7 @@ The server plugin.
 | Name | Type | Default value |
 | ------ | ------ | ------ |
 | `id` | `"nostr"` | `"nostr"` |
+| `version` | `string` | `PACKAGE_VERSION` |
 
 ## References
 

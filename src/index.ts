@@ -4,6 +4,7 @@
  */
 import { isProduction } from "@better-auth/core/env";
 import { BetterAuthError, type BetterAuthPlugin } from "better-auth";
+import { mergeSchema } from "better-auth/db";
 import { NOSTR_PATHS } from "./endpoints";
 import { NOSTR_ERROR_CODES } from "./error-codes";
 import {
@@ -17,7 +18,9 @@ import {
   signInNostr,
   updatePubkey,
 } from "./routes";
+import { nostrSchema } from "./schema";
 import type { NostrOptions } from "./types";
+import { PACKAGE_VERSION } from "./version";
 
 const DEFAULT_RATE_LIMITS = {
   nonce: { window: 60, max: 10 },
@@ -28,15 +31,30 @@ const DEFAULT_RATE_LIMITS = {
 const MISSING_BASE_URL =
   "NIP-98 signatures are checked against the server's URL, and no baseURL is configured, so it is derived from the request's Host header. Set baseURL or BETTER_AUTH_URL, or pass allowDynamicBaseURL: true to the nostr plugin to accept that.";
 
+/** TODO(1.0): remove with the aliases (#34). */
+const DEPRECATED_OPTIONS = {
+  disableImplicitSignUp: "disableSignUp",
+  modelName: "schema.nostrPubkey.modelName",
+  fields: "schema.nostrPubkey.fields",
+} as const;
+
 /** The server plugin. */
 export const nostr = (options?: NostrOptions) => {
   return {
     id: "nostr",
+    version: PACKAGE_VERSION,
     /** @hidden */
     init(ctx) {
       if (!ctx.options.baseURL && !options?.allowDynamicBaseURL) {
         if (isProduction) throw new BetterAuthError(MISSING_BASE_URL);
         ctx.logger.warn(`[better-auth-nostr] ${MISSING_BASE_URL}`);
+      }
+      for (const [old, replacement] of Object.entries(DEPRECATED_OPTIONS)) {
+        if (options?.[old as keyof typeof DEPRECATED_OPTIONS] !== undefined) {
+          ctx.logger.warn(
+            `[better-auth-nostr] ${old} is deprecated and is removed in 1.0; use ${replacement}.`,
+          );
+        }
       }
       return {
         options: {
@@ -76,42 +94,13 @@ export const nostr = (options?: NostrOptions) => {
       removePubkey: removePubkey(options),
     },
     /** @hidden */
-    schema: {
+    schema: mergeSchema(nostrSchema(), {
       nostrPubkey: {
-        modelName: options?.modelName ?? "nostrPubkey",
-        fields: {
-          name: {
-            type: "string",
-            required: false,
-            fieldName: options?.fields?.name ?? "name",
-          },
-          publicKey: {
-            type: "string",
-            required: true,
-            unique: true,
-            index: true,
-            fieldName: options?.fields?.publicKey ?? "publicKey",
-          },
-          userId: {
-            type: "string",
-            required: true,
-            references: { model: "user", field: "id", onDelete: "cascade" },
-            index: true,
-            fieldName: options?.fields?.userId ?? "userId",
-          },
-          createdAt: {
-            type: "date",
-            required: true,
-            fieldName: options?.fields?.createdAt ?? "createdAt",
-          },
-          lastUsedAt: {
-            type: "date",
-            required: false,
-            fieldName: options?.fields?.lastUsedAt ?? "lastUsedAt",
-          },
-        },
+        modelName:
+          options?.schema?.nostrPubkey?.modelName ?? options?.modelName,
+        fields: { ...options?.fields, ...options?.schema?.nostrPubkey?.fields },
       },
-    },
+    }),
     /** @hidden */
     rateLimit: (
       Object.keys(DEFAULT_RATE_LIMITS) as (keyof typeof DEFAULT_RATE_LIMITS)[]
@@ -129,3 +118,9 @@ export const nostr = (options?: NostrOptions) => {
 
 export { NOSTR_ERROR_CODES, type NostrErrorCode } from "./error-codes";
 export type { NostrOptions };
+
+declare module "@better-auth/core" {
+  interface BetterAuthPluginRegistry<AuthOptions, Options> {
+    nostr: { creator: typeof nostr };
+  }
+}

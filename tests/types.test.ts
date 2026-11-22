@@ -1,3 +1,4 @@
+import type { BetterAuthPluginRegistry } from "@better-auth/core";
 import { createAuthClient } from "better-auth/client";
 import { describe, expectTypeOf, it } from "vitest";
 import { nostrClient, type SignerSource } from "../src/client";
@@ -52,6 +53,12 @@ describe("relay options at the type level", () => {
     expectTypeOf(client.signIn.nostr)
       .parameter(0)
       .toEqualTypeOf<SignerSource | undefined>();
+  });
+
+  it("registers nostr in Better Auth's plugin registry", () => {
+    expectTypeOf<
+      BetterAuthPluginRegistry<unknown, unknown>["nostr"]["creator"]
+    >().toEqualTypeOf<typeof nostr>();
   });
 
   it("keeps Nostr as an alias of the NostrPubkey row type", () => {
