@@ -14,6 +14,7 @@ export const NOSTR_ERROR_CODES = defineErrorCodes({
   NOSTR_EVENT_EXPIRED: "The NIP-98 event was signed too long ago or ahead",
   NOSTR_INVALID_NONCE: "Invalid or expired nonce",
   NOSTR_PUBKEY_NOT_REGISTERED: "Nostr pubkey not registered",
+  NOSTR_SIGN_UP_DISABLED: "Sign-up is not allowed for this pubkey",
   NOSTR_PUBKEY_LINKED_TO_OTHER_USER:
     "Pubkey is already linked to another account",
   NOSTR_FAILED_TO_CREATE_PUBKEY: "Failed to create Nostr pubkey",

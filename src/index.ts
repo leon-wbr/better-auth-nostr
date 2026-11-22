@@ -117,7 +117,7 @@ export const nostr = (options?: NostrOptions) => {
 };
 
 export { NOSTR_ERROR_CODES, type NostrErrorCode } from "./error-codes";
-export type { NostrOptions };
+export type { NostrOptions, NostrSignUpCandidate } from "./types";
 
 declare module "@better-auth/core" {
   interface BetterAuthPluginRegistry<AuthOptions, Options> {
