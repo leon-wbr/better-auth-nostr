@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/leon-wbr/better-auth-nostr/compare/v0.8.0...v0.8.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* compatibility with the admin plugin and the latest Better Auth, with interop recipes and examples ([#86](https://github.com/leon-wbr/better-auth-nostr/issues/86)) ([bd7d3cc](https://github.com/leon-wbr/better-auth-nostr/commit/bd7d3ccb7126b29bd7e8a21f2e0e126f2a3e549a))
+
 ## [0.8.0](https://github.com/leon-wbr/better-auth-nostr/compare/v0.7.0...v0.8.0) (2026-11-19)
 
 
