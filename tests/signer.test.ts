@@ -353,6 +353,7 @@ describe("signers returned by createBunkerSigner and connect()", () => {
       getPublicKey: vi.fn().mockResolvedValue("remote-pk"),
       signEvent: vi.fn().mockResolvedValue(signed),
       close: vi.fn().mockResolvedValue(undefined),
+      logout: vi.fn().mockResolvedValue(undefined),
     };
     vi.spyOn(BunkerSigner, "fromBunker").mockReturnValue(bunker as never);
     return bunker;
@@ -435,6 +436,39 @@ describe("signers returned by createBunkerSigner and connect()", () => {
 
     await expect(signer.close()).rejects.toThrow("close failed");
     expect(pool.destroyed).toBe(false);
+  });
+
+  it("logout() sends NIP-46 logout, then closes the bunker and its own pool", async () => {
+    const bunker = fakeBunker();
+    const destroy = vi
+      .spyOn((await import("nostr-tools/pool")).SimplePool.prototype, "destroy")
+      .mockImplementation(() => {});
+    const signer = await connect();
+
+    await signer.logout();
+    expect(bunker.logout).toHaveBeenCalledOnce();
+    expect(bunker.close).toHaveBeenCalled();
+    expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  it("logout() still closes when the signer refuses, and reports the refusal", async () => {
+    const bunker = fakeBunker();
+    bunker.logout.mockRejectedValue(new Error("result is not ack: nope"));
+    const signer = await connect({ pool: stubPool() });
+
+    await expect(signer.logout()).rejects.toThrow("result is not ack");
+    expect(bunker.close).toHaveBeenCalledOnce();
+  });
+
+  it("logout() times out on a signer that never answers, and closes anyway", async () => {
+    const bunker = fakeBunker();
+    bunker.logout.mockReturnValue(new Promise(() => {}));
+    const signer = await connect({ pool: stubPool() });
+
+    await expect(signer.logout(20)).rejects.toMatchObject({
+      code: "NOSTR_SIGNER_TIMEOUT",
+    });
+    expect(bunker.close).toHaveBeenCalledOnce();
   });
 
   it("wraps the signer from a nostrconnect session the same way", async () => {

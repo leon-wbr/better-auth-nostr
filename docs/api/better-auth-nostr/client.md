@@ -94,11 +94,37 @@ A signer backed by a live NIP-46 connection to a remote signer.
 
 > **close**(): `Promise`\<`void`\>
 
-Closes the relay subscription, and the pool if we opened it.
+Closes the relay subscription, and the pool if we opened it. The remote
+signer keeps this client authorised; use `logout()` to end that too.
 
 ###### Returns
 
 `Promise`\<`void`\>
+
+##### logout()
+
+> **logout**(`timeoutMs?`): `Promise`\<`void`\>
+
+Sends NIP-46 `logout`, so the remote signer revokes this client, then
+closes like `close()`, also when the signer refuses or times out. Delete
+the persisted `clientSecretKey` and `bunkerUri` afterwards: NIP-46 says a
+logged-out client key must not be reused.
+
+###### Parameters
+
+| Parameter | Type | Description |
+| ------ | ------ | ------ |
+| `timeoutMs?` | `number` | How long to wait for the signer to acknowledge. |
+
+###### Returns
+
+`Promise`\<`void`\>
+
+###### Default Value
+
+```ts
+300000 (5 minutes)
+```
 
 ***
 

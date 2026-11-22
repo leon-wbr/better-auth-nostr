@@ -45,8 +45,21 @@ export interface RemoteNostrSigner extends NostrSigner {
    * remote pubkey and relays are not known until the signer answers.
    */
   readonly bunkerUri: string;
-  /** Closes the relay subscription, and the pool if we opened it. */
+  /**
+   * Closes the relay subscription, and the pool if we opened it. The remote
+   * signer keeps this client authorised; use `logout()` to end that too.
+   */
   close(): Promise<void>;
+  /**
+   * Sends NIP-46 `logout`, so the remote signer revokes this client, then
+   * closes like `close()`, also when the signer refuses or times out. Delete
+   * the persisted `clientSecretKey` and `bunkerUri` afterwards: NIP-46 says a
+   * logged-out client key must not be reused.
+   *
+   * @param timeoutMs - How long to wait for the signer to acknowledge.
+   * @defaultValue 300000 (5 minutes)
+   */
+  logout(timeoutMs?: number): Promise<void>;
 }
 
 /**
@@ -219,19 +232,33 @@ const wrapBunker = (
   signer: BunkerSigner,
   clientSecretKey: Uint8Array,
   ownedPool?: SimplePool,
-): RemoteNostrSigner => ({
-  clientSecretKey,
-  // A getter, because switchRelays() can rewrite `bp` after the handshake.
-  get bunkerUri() {
-    return toBunkerURL(signer.bp);
-  },
-  getPublicKey: () => signer.getPublicKey(),
-  signEvent: (event) => signer.signEvent(event),
-  close: async () => {
+): RemoteNostrSigner => {
+  const close = async () => {
     await signer.close();
     ownedPool?.destroy();
-  },
-});
+  };
+  return {
+    clientSecretKey,
+    // A getter, because switchRelays() can rewrite `bp` after the handshake.
+    get bunkerUri() {
+      return toBunkerURL(signer.bp);
+    },
+    getPublicKey: () => signer.getPublicKey(),
+    signEvent: (event) => signer.signEvent(event),
+    close,
+    logout: async (timeoutMs = DEFAULT_SIGNER_TIMEOUT_MS) => {
+      try {
+        await withTimeout(
+          signer.logout(),
+          timeoutMs,
+          "The remote signer did not acknowledge the logout in time",
+        );
+      } finally {
+        await close();
+      }
+    },
+  };
+};
 
 /**
  * `BunkerSigner.connect()` hardcodes an empty string in NIP-46's permission
