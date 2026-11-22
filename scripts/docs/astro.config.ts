@@ -67,6 +67,7 @@ export default defineConfig({
           items: [
             "support",
             "signer-checklist",
+            "threat-model",
             { label: "Changelog", link: `${repo}/blob/main/CHANGELOG.md` },
             {
               label: "Contributing",
