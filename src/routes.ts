@@ -30,7 +30,12 @@ import * as z from "zod";
 import { endpointURL, NOSTR_PATHS } from "./endpoints";
 import { NOSTR_ERROR_CODES } from "./error-codes";
 import { fetchProfile, type NostrProfile } from "./profile";
-import type { NostrMappedUser, NostrOptions, NostrPubkey } from "./types";
+import type {
+  NostrMappedUser,
+  NostrOptions,
+  NostrPubkey,
+  NostrSignUpCandidate,
+} from "./types";
 
 const DEFAULT_NONCE_TTL = 5 * 60 * 1000;
 const PUBKEY_REGEX = /^[a-f0-9]{64}$/i;
@@ -232,22 +237,26 @@ const defaultProfileMapping = ({ metadata }: NostrProfile): NostrMappedUser => {
   };
 };
 
+/** Best effort: relay failures and a missing profile resolve to `null`. */
+const lookupProfile = (opts: NostrOptions | undefined, pubkey: string) =>
+  opts?.relays
+    ? fetchProfile(pubkey, {
+        relays: opts.relays,
+        timeoutMs: opts.relayTimeoutMs,
+      })
+    : null;
+
 /** Best effort, like the rest of relay access: any failure maps to no fields. */
 const userInfoFromProfile = async (
   ctx: GenericEndpointContext,
   opts: NostrOptions | undefined,
-  pubkey: string,
+  profile: NostrProfile | null,
   action: "create" | "update",
 ): Promise<
   ({ name?: string; image?: string } & Record<string, unknown>) | null
 > => {
-  if (!opts?.relays) return null;
+  if (!profile) return null;
   try {
-    const profile = await fetchProfile(pubkey, {
-      relays: opts.relays,
-      timeoutMs: opts.relayTimeoutMs,
-    });
-    if (!profile) return null;
     const {
       id: _id,
       email: _email,
@@ -257,7 +266,7 @@ const userInfoFromProfile = async (
       ...extra
     } = {
       ...defaultProfileMapping(profile),
-      ...(await opts.mapProfileToUser?.(profile)),
+      ...(await opts?.mapProfileToUser?.(profile)),
     };
     return {
       name,
@@ -307,14 +316,12 @@ const guardStorage = async <T>(
 const signUp = async (
   ctx: GenericEndpointContext,
   opts: NostrOptions | undefined,
-  pubkey: string,
+  { pubkey, npub, profile }: Omit<NostrSignUpCandidate, "request">,
 ): Promise<{ user: User; nostrPubkey: NostrPubkey }> => {
-  const npub = nip19.npubEncode(pubkey);
   const email =
     (await opts?.generateEmail?.(npub, pubkey)) ??
     createPlaceholderEmail({ identifier: npub, namespace: "nostr" });
-  // Fetched before the transaction, so the relay wait never holds it open.
-  const userInfo = await userInfoFromProfile(ctx, opts, pubkey, "create");
+  const userInfo = await userInfoFromProfile(ctx, opts, profile, "create");
 
   try {
     return await runWithTransaction(ctx.context.adapter, async () => {
@@ -445,7 +452,23 @@ const signIn = async (
       );
     }
 
-    ({ user, nostrPubkey } = await signUp(ctx, opts, pubkey));
+    // Looked up before signUp's transaction, so the relay wait never holds it
+    // open, and once, for both the gate and autofill.
+    const candidate = {
+      pubkey,
+      npub: nip19.npubEncode(pubkey),
+      profile: await lookupProfile(opts, pubkey),
+    };
+    if (
+      opts?.allowSignUp &&
+      !(await opts.allowSignUp({ ...candidate, request: ctx.request }))
+    ) {
+      throw APIError.from(
+        "FORBIDDEN",
+        NOSTR_ERROR_CODES.NOSTR_SIGN_UP_DISABLED,
+      );
+    }
+    ({ user, nostrPubkey } = await signUp(ctx, opts, candidate));
   } else {
     user = await ctx.context.internalAdapter.findUserById(nostrPubkey.userId);
     if (!user) {
@@ -453,7 +476,12 @@ const signIn = async (
     }
 
     if (opts?.overrideUserInfoOnSignIn) {
-      const userInfo = await userInfoFromProfile(ctx, opts, pubkey, "update");
+      const userInfo = await userInfoFromProfile(
+        ctx,
+        opts,
+        await lookupProfile(opts, pubkey),
+        "update",
+      );
       if (userInfo) {
         user =
           (await ctx.context.internalAdapter.updateUser(user.id, userInfo)) ??

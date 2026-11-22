@@ -31,6 +31,7 @@ includes them. The codes are public API; the messages are not.
 | <a id="property-nostr_event_expired"></a> `NOSTR_EVENT_EXPIRED` | `RawError`\<`"NOSTR_EVENT_EXPIRED"`\> |
 | <a id="property-nostr_invalid_nonce"></a> `NOSTR_INVALID_NONCE` | `RawError`\<`"NOSTR_INVALID_NONCE"`\> |
 | <a id="property-nostr_pubkey_not_registered"></a> `NOSTR_PUBKEY_NOT_REGISTERED` | `RawError`\<`"NOSTR_PUBKEY_NOT_REGISTERED"`\> |
+| <a id="property-nostr_sign_up_disabled"></a> `NOSTR_SIGN_UP_DISABLED` | `RawError`\<`"NOSTR_SIGN_UP_DISABLED"`\> |
 | <a id="property-nostr_pubkey_linked_to_other_user"></a> `NOSTR_PUBKEY_LINKED_TO_OTHER_USER` | `RawError`\<`"NOSTR_PUBKEY_LINKED_TO_OTHER_USER"`\> |
 | <a id="property-nostr_failed_to_create_pubkey"></a> `NOSTR_FAILED_TO_CREATE_PUBKEY` | `RawError`\<`"NOSTR_FAILED_TO_CREATE_PUBKEY"`\> |
 | <a id="property-nostr_pubkey_not_found"></a> `NOSTR_PUBKEY_NOT_FOUND` | `RawError`\<`"NOSTR_PUBKEY_NOT_FOUND"`\> |
@@ -72,3 +73,9 @@ The server plugin.
 ### NostrOptions
 
 Re-exports [NostrOptions](better-auth-nostr/client.md#nostroptions)
+
+***
+
+### NostrSignUpCandidate
+
+Re-exports [NostrSignUpCandidate](better-auth-nostr/client.md#nostrsignupcandidate)

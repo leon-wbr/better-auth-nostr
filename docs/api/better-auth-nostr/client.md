@@ -162,6 +162,21 @@ Options of `createNostrConnectSession`.
 
 ***
 
+### NostrSignUpCandidate
+
+What `allowSignUp` gets about a pubkey that has no user yet.
+
+#### Properties
+
+| Property | Type | Description |
+| ------ | ------ | ------ |
+| <a id="property-pubkey"></a> `pubkey` | `string` | The signing pubkey, hex. |
+| <a id="property-npub"></a> `npub` | `string` | - |
+| <a id="property-profile"></a> `profile` | [`NostrProfile`](#nostrprofile) \| `null` | The kind `0` profile also used for autofill: self-claimed and unverified, `nip05` included. `null` when `relays` is unset or the lookup finds none. |
+| <a id="property-request"></a> `request` | `Request` \| `undefined` | `undefined` for server-side `auth.api` calls. |
+
+***
+
 ### NostrOptions
 
 The server options of `nostr(options?)`. All are optional.
@@ -178,6 +193,7 @@ The server options of `nostr(options?)`. All are optional.
 | <a id="property-relaytimeoutms-1"></a> `relayTimeoutMs?` | `number` | `5000` | How long to wait on relays, in milliseconds. |
 | <a id="property-disablesignup"></a> `disableSignUp?` | `boolean` | `false` | Reject sign-ins from keys that are not linked to a user yet (`NOSTR_PUBKEY_NOT_REGISTERED`) instead of creating a user. |
 | <a id="property-disableimplicitsignup"></a> ~~`disableImplicitSignUp?`~~ | `boolean` | `undefined` | **Deprecated** Use `disableSignUp`; removed in 1.0. |
+| <a id="property-allowsignup"></a> `allowSignUp?` | (`candidate`) => `boolean` \| `Promise`\<`boolean`\> | `every new pubkey may sign up` | Decides, sync or async, whether a pubkey with no user yet may sign up. Runs on sign-in only, after the NIP-98 event and nonce have been verified; never for linked keys or `nostr.addPubkey`, and not at all when `disableSignUp` is set. `false` rejects with `NOSTR_SIGN_UP_DISABLED` (403) and creates nothing; a throw propagates. |
 | <a id="property-schema"></a> `schema?` | `object` | `undefined` | Rename the pubkey model and its columns, for an existing table, as with Better Auth's own plugins. **Example** ``{ nostrPubkey: { modelName: "nostr_keys", fields: { publicKey: "pub_key" } } }`` |
 | `schema.nostrPubkey?` | `object` | `...` | - |
 | `schema.nostrPubkey.modelName?` | `string` | `undefined` | - |

@@ -46,6 +46,12 @@ export const ERROR_DOCS: Record<NostrErrorCode, ErrorDoc> = {
     when: "`disableSignUp` is set and the key has no user.",
     fix: "Sign in another way and link the key with `nostr.addPubkey` first.",
   },
+  NOSTR_SIGN_UP_DISABLED: {
+    from: "server",
+    status: "403",
+    when: "`allowSignUp` returned `false` for a key that has no user.",
+    fix: "Meet the server's sign-up rule, or sign in another way and link the key with `nostr.addPubkey`.",
+  },
   NOSTR_PUBKEY_LINKED_TO_OTHER_USER: {
     from: "server",
     status: "409",

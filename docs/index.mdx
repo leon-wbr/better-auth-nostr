@@ -106,7 +106,7 @@ const { data, error } = await authClient.signIn.nostr();
 if (error) console.error(error.code, error.message);
 ```
 
-The first sign-in with a new key creates a user, named after the npub and with Better Auth's placeholder email `npub1…@nostr.placeholder.invalid`. Set [`disableSignUp`](#options) to allow only keys that are already linked, or [`generateEmail`](#options) to choose the email. The action never throws: a failure comes back as `error`, with a stable [`error.code`](reference.md#error-codes).
+The first sign-in with a new key creates a user, named after the npub and with Better Auth's placeholder email `npub1…@nostr.placeholder.invalid`. Set [`disableSignUp`](#options) to allow only keys that are already linked, [`allowSignUp`](guide.md#deciding-who-can-sign-up) to decide per key, or [`generateEmail`](#options) to choose the email. The action never throws: a failure comes back as `error`, with a stable [`error.code`](reference.md#error-codes).
 
 No extension? Pass `{ nsec }` or a NIP-46 remote signer instead; the [guide](guide.md#signers) shows each.
 
@@ -180,6 +180,7 @@ Rename the model or its columns with Better Auth's `schema` option, as for its o
 | `relayTimeoutMs?` | `5000` | How long to wait on relays, in milliseconds. |
 | `disableSignUp?` | `false` | Reject sign-ins from keys that are not linked to a user yet (`NOSTR_PUBKEY_NOT_REGISTERED`) instead of creating a user. |
 | ~~`disableImplicitSignUp?`~~ | `undefined` | **Deprecated** Use `disableSignUp`; removed in 1.0. |
+| `allowSignUp?` | `every new pubkey may sign up` | Decides, sync or async, whether a pubkey with no user yet may sign up. Runs on sign-in only, after the NIP-98 event and nonce have been verified; never for linked keys or `nostr.addPubkey`, and not at all when `disableSignUp` is set. `false` rejects with `NOSTR_SIGN_UP_DISABLED` (403) and creates nothing; a throw propagates. |
 | `schema?` | `undefined` | Rename the pubkey model and its columns, for an existing table, as with Better Auth's own plugins. **Example** ``{ nostrPubkey: { modelName: "nostr_keys", fields: { publicKey: "pub_key" } } }`` |
 | `schema.nostrPubkey?` | `...` | - |
 | `schema.nostrPubkey.modelName?` | `undefined` | - |

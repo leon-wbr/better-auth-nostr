@@ -155,6 +155,23 @@ Two things differ from a social provider, both because kind `0` is a self-claime
 
 The server queries only your `relays`. Unlike the browser, it never follows relay hints or resolves NIP-05, since that would let user input pick the hosts it connects to.
 
+## Deciding who can sign up
+
+By default every key that signs a valid login gets a user. `disableSignUp` turns that off for every key; `allowSignUp` decides per key:
+
+```ts
+const allowlist = new Set(["<hex pubkey>", "<hex pubkey>"]);
+
+nostr({
+  allowSignUp: async ({ pubkey, npub, profile, request }) =>
+    allowlist.has(pubkey) || (await hasPaid(pubkey)),
+});
+```
+
+It runs only for a key with no user yet, after the signature and nonce have been checked, so it never sees a key whose holder hasn't proved it. Signing in with a linked key and `nostr.addPubkey` skip it. `false` answers `403` with `NOSTR_SIGN_UP_DISABLED` and creates nothing; a throw is a `500`, never a sign-up. With `disableSignUp` set it doesn't run, and the code stays `NOSTR_PUBKEY_NOT_REGISTERED`.
+
+`profile` is the kind `0` profile also used to [fill the user](#filling-the-user-from-the-profile), fetched once for both. It is `null` without `relays` or when no relay has one, and it is self-claimed: a `nip05` in it is not verified. `request` is `undefined` for `auth.api` calls from the server.
+
 ## How it works
 
 ### Sign-in
@@ -169,7 +186,7 @@ The login endpoint then:
 1. unpacks the event with `nostr-tools/nip98`,
 2. checks the signature, kind, URL, method, body hash and the 60-second time window,
 3. consumes the nonce atomically, and only if it was issued for the key that signed, so it cannot be replayed,
-4. finds the `nostrPubkey` row for the key, or creates a user, the row and its `nostr` account row in one transaction,
+4. finds the `nostrPubkey` row for the key, or, once [`allowSignUp`](#deciding-who-can-sign-up) agrees, creates a user, the row and its `nostr` account row in one transaction,
 5. creates a session, records the key's `lastUsedAt` and sets the cookie.
 
 Because the nonce sits in both the signed payload and the body, tampering with either side fails validation. Two concurrent first sign-ins with the same key end up as one user: the second insert fails on the unique index, rolls back and signs in as the user the first one created.
