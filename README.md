@@ -53,6 +53,7 @@ const { data, error } = await authClient.signIn.nostr();
 
 - [Getting started](https://leon-wbr.github.io/better-auth-nostr/): from install to a first sign-in and a second linked key, with the schema and every option.
 - [Guide](https://leon-wbr.github.io/better-auth-nostr/guide/): signers (NIP-07, nsec, NIP-46 remote signers), signing other events, profiles and relays, managing linked keys, and how sign-in works.
+- [Interop](https://leon-wbr.github.io/better-auth-nostr/interop/): other Better Auth plugins (admin, multiSession, organization, customSession, anonymous) and signers from NDK, applesauce, window.nostr.js and Amber.
 - [Reference](https://leon-wbr.github.io/better-auth-nostr/reference/): endpoints, client actions, and error codes.
 - [API](https://leon-wbr.github.io/better-auth-nostr/api/): every export and option, generated from the JSDoc.
 - [Key loss and recovery](https://leon-wbr.github.io/better-auth-nostr/key-loss/): backup keys, recovery paths and key rotation, since Nostr has no protocol-level recovery yet.
@@ -76,7 +77,7 @@ npm run ci:local    # check + build: what CI runs
 
 GitHub Actions runs `npm run ci:local` on pull requests and on pushes to main, along with the PR-title check and a gitleaks secret scan.
 
-See `src/routes.ts` and `src/client.ts` for the endpoint and action wiring, and `tests/` for end-to-end examples that boot Better Auth against the in-memory adapter. `examples/react` holds a Vite + Better Auth sandbox with its own auth server and migrations.
+See `src/routes.ts` and `src/client.ts` for the endpoint and action wiring, and `tests/` for end-to-end examples that boot Better Auth against the in-memory adapter. Runnable apps are in [examples/](examples/): [React Router](examples/react/) is a sandbox with SQLite and every signer, and [Next.js](examples/nextjs/) and [Hono on Cloudflare Workers](examples/hono-workers/) are minimal starting points that CI signs in to on every PR.
 
 ### Releasing
 

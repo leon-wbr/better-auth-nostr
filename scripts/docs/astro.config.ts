@@ -48,7 +48,7 @@ export default defineConfig({
           label: "Get started",
           items: [{ label: "Installation", slug: "index" }],
         },
-        { label: "Guides", items: ["guide", "key-loss"] },
+        { label: "Guides", items: ["guide", "interop", "key-loss"] },
         {
           label: "Reference",
           items: [

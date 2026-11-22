@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/knip@latest/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["smoke/sign-in.ts"],
+      "entry": ["smoke/sign-in.ts", "smoke/http.ts"],
       "ignore": ["examples/**", "docs/**"]
     },
     "scripts/docs": {
