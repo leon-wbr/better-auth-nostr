@@ -117,6 +117,20 @@ export interface NostrOptions extends RelayOptions {
    * @defaultValue false
    */
   overrideUserInfoOnSignIn?: boolean;
+  /**
+   * Check the `nip05` claim of the kind `0` profile against the domain's
+   * `nostr.json` at sign-up, and store a match on the pubkey row as `nip05` and
+   * `nip05VerifiedAt`. Needs `relays`. The server then makes an HTTPS request
+   * to a host named in the profile: `allowedDomains` limits it to your
+   * domains, `required` refuses sign-up and every sign-in (each re-verified)
+   * without a match (`NOSTR_IDENTIFIER_NOT_VERIFIED`), and `timeoutMs` bounds the
+   * request (default 5000).
+   *
+   * @defaultValue off
+   */
+  verifyNip05?:
+    | true
+    | { allowedDomains?: string[]; required?: boolean; timeoutMs?: number };
 }
 
 /** A row of the `nostrPubkey` model, as stored and as returned to clients. */
@@ -128,6 +142,10 @@ export interface NostrPubkey {
   createdAt: Date;
   /** When the pubkey last signed in; null until then. */
   lastUsedAt?: Date | null | undefined;
+  /** The NIP-05 identifier `verifyNip05` last verified, as `name@domain`. */
+  nip05?: string | null | undefined;
+  /** When `nip05` was verified. */
+  nip05VerifiedAt?: Date | null | undefined;
 }
 
 /** @deprecated Use `NostrPubkey`. */

@@ -187,6 +187,8 @@ The server options of `nostr(options?)`. All are optional.
 | `schema.nostrPubkey.fields.userId?` | `string` | `...` | - |
 | `schema.nostrPubkey.fields.createdAt?` | `string` | `...` | - |
 | `schema.nostrPubkey.fields.lastUsedAt?` | `string` | `...` | - |
+| `schema.nostrPubkey.fields.nip05?` | `string` | `...` | - |
+| `schema.nostrPubkey.fields.nip05VerifiedAt?` | `string` | `...` | - |
 | <a id="property-modelname"></a> ~~`modelName?`~~ | `string` | `undefined` | **Deprecated** Use `schema.nostrPubkey.modelName`; removed in 1.0. |
 | <a id="property-noncettlms"></a> `nonceTtlMs?` | `number` | `300000 (5 minutes)` | How long an issued nonce stays valid, in milliseconds. |
 | <a id="property-getnonce"></a> `getNonce?` | () => `Promise`\<`string`\> | `16 random bytes as hex` | Your own nonce generator. Each call must return a fresh value of 8–249 characters from `[A-Za-z0-9_-]`; anything else makes `/nostr/nonce` fail. |
@@ -197,10 +199,13 @@ The server options of `nostr(options?)`. All are optional.
 | `fields.userId?` | `string` | `...` | - |
 | `fields.createdAt?` | `string` | `...` | - |
 | `fields.lastUsedAt?` | `string` | `...` | - |
+| `fields.nip05?` | `string` | `...` | - |
+| `fields.nip05VerifiedAt?` | `string` | `...` | - |
 | <a id="property-mapprofiletouser"></a> `mapProfileToUser?` | (`profile`) => [`NostrMappedUser`](#nostrmappeduser) \| `Promise`\<[`NostrMappedUser`](#nostrmappeduser)\> | `display_name` or `name`, and an `https:` `picture` | Maps a `NostrProfile` to user fields, sync or async. The result is spread over the default mapping; extra keys go to `user.additionalFields`; `email`, `emailVerified` and `id` are not allowed. |
 | <a id="property-ratelimit"></a> `rateLimit?` | `Partial`\<`Record`\<`"nonce"` \| `"login"` \| `"addPubkey"`, \{ `window`: `number`; `max`: `number`; \}\>\> | `nonce 10 per 60s, login 3 per 10s, add-pubkey 5 per 60s` | Rate limits per endpoint, in Better Auth's `{ window, max }` form (seconds, requests). Like every Better Auth rate limit, they apply only where `rateLimit.enabled` is on, by default in production. |
 | <a id="property-allowdynamicbaseurl"></a> `allowDynamicBaseURL?` | `boolean` | `false` | Accept a server without `baseURL` or `BETTER_AUTH_URL`, whose URL, and so the URL NIP-98 signatures are bound to, comes from each request's `Host` header. Without it the plugin warns at init, and refuses to start in production. |
 | <a id="property-overrideuserinfoonsignin"></a> `overrideUserInfoOnSignIn?` | `boolean` | `false` | Also refresh an existing user from their profile on every sign-in, not only at sign-up. Needs `relays`. |
+| <a id="property-verifynip05"></a> `verifyNip05?` | `true` \| \{ `allowedDomains?`: `string`[]; `required?`: `boolean`; `timeoutMs?`: `number`; \} | `off` | Check the `nip05` claim of the kind `0` profile against the domain's `nostr.json` at sign-up, and store a match on the pubkey row as `nip05` and `nip05VerifiedAt`. Needs `relays`. The server then makes an HTTPS request to a host named in the profile: `allowedDomains` limits it to your domains, `required` refuses sign-up and every sign-in (each re-verified) without a match (`NOSTR_IDENTIFIER_NOT_VERIFIED`), and `timeoutMs` bounds the request (default 5000). |
 
 ***
 
@@ -218,6 +223,8 @@ A row of the `nostrPubkey` model, as stored and as returned to clients.
 | <a id="property-name"></a> `name?` | `string` \| `null` | - |
 | <a id="property-createdat"></a> `createdAt` | `Date` | - |
 | <a id="property-lastusedat"></a> `lastUsedAt?` | `Date` \| `null` | When the pubkey last signed in; null until then. |
+| <a id="property-nip05"></a> `nip05?` | `string` \| `null` | The NIP-05 identifier `verifyNip05` last verified, as `name@domain`. |
+| <a id="property-nip05verifiedat"></a> `nip05VerifiedAt?` | `Date` \| `null` | When `nip05` was verified. |
 
 ## Type Aliases
 

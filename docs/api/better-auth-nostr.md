@@ -35,6 +35,7 @@ includes them. The codes are public API; the messages are not.
 | <a id="property-nostr_failed_to_create_pubkey"></a> `NOSTR_FAILED_TO_CREATE_PUBKEY` | `RawError`\<`"NOSTR_FAILED_TO_CREATE_PUBKEY"`\> |
 | <a id="property-nostr_pubkey_not_found"></a> `NOSTR_PUBKEY_NOT_FOUND` | `RawError`\<`"NOSTR_PUBKEY_NOT_FOUND"`\> |
 | <a id="property-nostr_cannot_remove_last_pubkey"></a> `NOSTR_CANNOT_REMOVE_LAST_PUBKEY` | `RawError`\<`"NOSTR_CANNOT_REMOVE_LAST_PUBKEY"`\> |
+| <a id="property-nostr_identifier_not_verified"></a> `NOSTR_IDENTIFIER_NOT_VERIFIED` | `RawError`\<`"NOSTR_IDENTIFIER_NOT_VERIFIED"`\> |
 | <a id="property-nostr_no_signer"></a> `NOSTR_NO_SIGNER` | `RawError`\<`"NOSTR_NO_SIGNER"`\> |
 | <a id="property-nostr_signer_timeout"></a> `NOSTR_SIGNER_TIMEOUT` | `RawError`\<`"NOSTR_SIGNER_TIMEOUT"`\> |
 | <a id="property-nostr_signer_too_slow"></a> `NOSTR_SIGNER_TOO_SLOW` | `RawError`\<`"NOSTR_SIGNER_TOO_SLOW"`\> |

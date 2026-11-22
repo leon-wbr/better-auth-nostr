@@ -25,6 +25,7 @@ export const createTestAuth = (
     rateLimit,
     session,
     account,
+    advanced,
     db = createMemoryDb(options?.modelName ?? "nostrPubkey"),
     database = memoryAdapter(db),
   }: Pick<
@@ -37,6 +38,7 @@ export const createTestAuth = (
     | "rateLimit"
     | "session"
     | "account"
+    | "advanced"
   > & {
     db?: MemoryDB;
   } = {},
@@ -53,7 +55,7 @@ export const createTestAuth = (
     database,
     emailAndPassword: { enabled: false },
     plugins: [nostr(options), ...plugins],
-    advanced: { disableCSRFCheck: true },
+    advanced: { disableCSRFCheck: true, ...advanced },
   });
 };
 

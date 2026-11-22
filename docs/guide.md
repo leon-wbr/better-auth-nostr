@@ -153,7 +153,29 @@ Two things differ from a social provider, both because kind `0` is a self-claime
 - A lookup that fails, times out or finds nothing falls back to the npub instead of failing sign-in.
 - `email`, `emailVerified` and `id` are typed `never` in `NostrMappedUser`: identity is the signing pubkey, and the email stays `generateEmail`'s job.
 
-The server queries only your `relays`. Unlike the browser, it never follows relay hints or resolves NIP-05, since that would let user input pick the hosts it connects to.
+The server queries only your `relays`. Unlike the browser, it never follows relay hints, and it resolves NIP-05 only when [`verifyNip05`](#verified-nip-05) is on, and then only on `allowedDomains` when set, since resolving lets user input pick the hosts it connects to.
+
+### Verified NIP-05
+
+A profile's `nip05` is a claim anyone can write. `verifyNip05` makes the server check it at sign-up: it fetches `https://<domain>/.well-known/nostr.json?name=<name>` and, when `names[name]` is the signing pubkey, stores the identifier on the key's row as `nip05` (lower-case `name@domain`, `_@domain` for a bare domain) with `nip05VerifiedAt`. `nostr.listPubkeys` returns both, so the app has a NIP-05 it can show as verified.
+
+```ts
+nostr({
+  relays: ["wss://relay.example.com"],
+  verifyNip05: { allowedDomains: ["example.com"], required: true },
+});
+```
+
+- `verifyNip05: true` verifies whatever domain the profile names. A mismatch or a failed request stores nothing, and sign-up goes ahead.
+- `allowedDomains` counts only identifiers on these hosts (exact, case-insensitive), and the server never contacts any other.
+- `required` refuses sign-up and sign-in with `403 NOSTR_IDENTIFIER_NOT_VERIFIED` unless the key has a verified identifier on an allowed domain. A refused sign-up leaves no user behind. Every sign-in of an existing key is verified again, so removing someone from `nostr.json` locks them out on their next sign-in, at the cost of a relay lookup and an HTTPS request per sign-in.
+- `timeoutMs` bounds the request, 5000 by default.
+
+It needs `relays`, since the claim comes from the kind `0` profile, and fails at init without them. Without `required`, an existing key is not checked again.
+
+The request goes to a host named by user data, so it is hardened: HTTPS only, redirects refused (NIP-05 forbids following them), anything other than `200` fails, a 256 KiB response cap, and the timeout. IP literals are refused everywhere. Where `node:dns` exists (Node, Bun, Deno), a host that resolves to a private, loopback, link-local or multicast address, such as `10.0.0.1`, `169.254.169.254`, `::1` or `fd00::/8`, is refused too. The fetch resolves the host again, so DNS rebinding can still slip past that check, and Workers and Deno Deploy have no DNS API at all. `allowedDomains` is the boundary to rely on: set it whenever the server can reach anything internal.
+
+The two columns are optional, so adding them is not a breaking change, but run the migration: Better Auth checks the schema on every request and refuses until it matches. With `advanced.database.validateSchema: false`, a database without them still signs in, and the write is skipped with a warning, as for `lastUsedAt`.
 
 ## How it works
 
@@ -184,7 +206,7 @@ Users can see, rename and remove the keys linked to their account. The endpoints
 
 ```ts
 const { data: pubkeys } = await authClient.nostr.listPubkeys();
-// [{ id, publicKey, npub, name, createdAt, lastUsedAt }]
+// [{ id, publicKey, npub, name, createdAt, lastUsedAt, nip05, nip05VerifiedAt }]
 
 await authClient.nostr.updatePubkey({ id, name: "Laptop" });
 await authClient.nostr.removePubkey({ id });

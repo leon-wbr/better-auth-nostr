@@ -70,6 +70,12 @@ export const ERROR_DOCS: Record<NostrErrorCode, ErrorDoc> = {
     when: "`removePubkey` for the user's last way to sign in.",
     fix: "Link another key or sign-in method first, or set `account.accountLinking.allowUnlinkingAll`. See [Key loss and recovery](key-loss.md).",
   },
+  NOSTR_IDENTIFIER_NOT_VERIFIED: {
+    from: "server",
+    status: "403",
+    when: "`verifyNip05.required` is set and the key's profile has no `nip05` that its domain's `nostr.json` maps to the key, on an allowed domain.",
+    fix: "Publish a kind `0` profile with a `nip05` on an allowed domain, and add the key to that domain's `nostr.json`.",
+  },
   NOSTR_NO_SIGNER: {
     from: "client",
     status: "400",

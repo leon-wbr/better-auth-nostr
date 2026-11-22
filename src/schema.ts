@@ -21,6 +21,8 @@ export const nostrSchema = () =>
         },
         createdAt: { type: "date", required: true },
         lastUsedAt: { type: "date", required: false },
+        nip05: { type: "string", required: false },
+        nip05VerifiedAt: { type: "date", required: false },
       },
     },
   }) satisfies BetterAuthPluginDBSchema;
