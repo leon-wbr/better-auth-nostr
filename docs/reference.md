@@ -38,7 +38,7 @@ Signs in with a NIP-98 token, creating the user on first sign-in unless `disable
 - Header: `Authorization: Nostr <base64 event>`, a kind `27235` event signed for this endpoint's absolute URL, method `post` and the body's hash.
 - Body: `{ nonce }`, from `/nostr/nonce` for the same key.
 - Response: `{ session, user }`.
-- Errors: `NOSTR_MISSING_TOKEN`, `NOSTR_INVALID_TOKEN`, `NOSTR_INVALID_EVENT`, `NOSTR_EVENT_EXPIRED`, `NOSTR_INVALID_NONCE`, `NOSTR_PUBKEY_NOT_REGISTERED`, `NOSTR_FAILED_TO_CREATE_PUBKEY`, and Better Auth's `USER_NOT_FOUND` (401, the key's user is gone), `FAILED_TO_CREATE_USER` (500) and `FAILED_TO_CREATE_SESSION` (500 when storage fails, 401 when a hook denies the session).
+- Errors: `NOSTR_MISSING_TOKEN`, `NOSTR_INVALID_TOKEN`, `NOSTR_INVALID_EVENT`, `NOSTR_EVENT_EXPIRED`, `NOSTR_INVALID_NONCE`, `NOSTR_PUBKEY_NOT_REGISTERED`, `NOSTR_IDENTIFIER_NOT_VERIFIED` (403), `NOSTR_FAILED_TO_CREATE_PUBKEY`, and Better Auth's `USER_NOT_FOUND` (401, the key's user is gone), `FAILED_TO_CREATE_USER` (500) and `FAILED_TO_CREATE_SESSION` (500 when storage fails, 401 when a hook denies the session).
 
 Its path starts with `/sign-in`, so Better Auth's sign-in rules apply to it, such as the anonymous plugin linking a guest to the user who signs in.
 
@@ -59,7 +59,7 @@ Links the key that signed the token to the signed-in user. Needs a session, and 
 
 Lists the keys linked to the signed-in user. Needs a session.
 
-- Response: `{ id, publicKey, npub, name, createdAt, lastUsedAt }[]`. `name` and `lastUsedAt` are `null` until set.
+- Response: `{ id, publicKey, npub, name, createdAt, lastUsedAt, nip05, nip05VerifiedAt }[]`. `name`, `lastUsedAt`, `nip05` and `nip05VerifiedAt` are `null` until set; the last two only with [`verifyNip05`](guide.md#verified-nip-05).
 - Errors: without a session, `401`.
 
 ### POST /nostr/update-pubkey
@@ -160,6 +160,7 @@ Besides these, the endpoints answer with Better Auth's own `VALIDATION_ERROR` (4
 | `NOSTR_FAILED_TO_CREATE_PUBKEY` | 500 | Storing the key failed. | Check the server log and the database, then retry. |
 | `NOSTR_PUBKEY_NOT_FOUND` | 404 | `updatePubkey` or `removePubkey` for a key id the user does not own. | Take the id from `nostr.listPubkeys` for the signed-in user. |
 | `NOSTR_CANNOT_REMOVE_LAST_PUBKEY` | 400 | `removePubkey` for the user's last way to sign in. | Link another key or sign-in method first, or set `account.accountLinking.allowUnlinkingAll`. See [Key loss and recovery](key-loss.md). |
+| `NOSTR_IDENTIFIER_NOT_VERIFIED` | 403 | `verifyNip05.required` is set and the key's profile has no `nip05` that its domain's `nostr.json` maps to the key, on an allowed domain. | Publish a kind `0` profile with a `nip05` on an allowed domain, and add the key to that domain's `nostr.json`. |
 
 <!-- /generated:server-errors -->
 

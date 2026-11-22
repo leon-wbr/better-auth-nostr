@@ -20,6 +20,8 @@ export const NOSTR_ERROR_CODES = defineErrorCodes({
   NOSTR_PUBKEY_NOT_FOUND: "Nostr pubkey not found",
   NOSTR_CANNOT_REMOVE_LAST_PUBKEY:
     "Cannot remove the last way to sign in to this account",
+  NOSTR_IDENTIFIER_NOT_VERIFIED:
+    "Sign-in requires a verified NIP-05 identifier on an allowed domain",
   NOSTR_NO_SIGNER:
     "No signer available — pass `signer`, pass `nsec`, or install a NIP-07 extension",
   NOSTR_SIGNER_TIMEOUT: "The signer did not respond in time",

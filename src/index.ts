@@ -56,6 +56,11 @@ export const nostr = (options?: NostrOptions) => {
           );
         }
       }
+      if (options?.verifyNip05 && !options.relays) {
+        throw new BetterAuthError(
+          "verifyNip05 needs relays: the NIP-05 claim comes from the kind 0 profile.",
+        );
+      }
       return {
         options: {
           databaseHooks: {

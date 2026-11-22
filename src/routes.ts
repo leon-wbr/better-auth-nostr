@@ -29,6 +29,7 @@ import {
 import * as z from "zod";
 import { endpointURL, NOSTR_PATHS } from "./endpoints";
 import { NOSTR_ERROR_CODES } from "./error-codes";
+import { DEFAULT_NIP05_TIMEOUT_MS, verifyNip05 } from "./nip05";
 import { fetchProfile, type NostrProfile } from "./profile";
 import type { NostrMappedUser, NostrOptions, NostrPubkey } from "./types";
 
@@ -161,20 +162,48 @@ const createPubkey = async (
 };
 
 /**
- * Best effort, so a database that has not been migrated for the column yet
+ * Best effort, so a database that has not been migrated for the columns yet
  * still signs in.
  */
-const touchPubkey = async (ctx: GenericEndpointContext, id: string) => {
+const updatePubkeyColumns = async (
+  ctx: GenericEndpointContext,
+  id: string,
+  update: Partial<NostrPubkey>,
+) => {
   try {
     await ctx.context.adapter.update({
       model: MODEL,
       where: [{ field: "id", value: id }],
-      update: { lastUsedAt: new Date() },
+      update,
     });
   } catch (error) {
-    ctx.context.logger.warn("Could not record the pubkey's last use", error);
+    ctx.context.logger.warn(
+      `Could not record the pubkey's ${Object.keys(update).join(", ")}`,
+      error,
+    );
   }
 };
+
+type VerifiedNip05 = { nip05: string; nip05VerifiedAt: Date } | null;
+
+const verifiedNip05 = async (
+  opts: NostrOptions | undefined,
+  profile: NostrProfile | null,
+  pubkey: string,
+): Promise<VerifiedNip05> => {
+  const claim = profile?.metadata.nip05;
+  if (!opts?.verifyNip05 || !claim) return null;
+  const { allowedDomains, timeoutMs = DEFAULT_NIP05_TIMEOUT_MS } =
+    opts.verifyNip05 === true ? {} : opts.verifyNip05;
+  const nip05 = await verifyNip05(claim, pubkey, { allowedDomains, timeoutMs });
+  return nip05 ? { nip05, nip05VerifiedAt: new Date() } : null;
+};
+
+const nip05Required = (opts: NostrOptions | undefined) =>
+  typeof opts?.verifyNip05 === "object" && !!opts.verifyNip05.required;
+
+const NIP05_NOT_VERIFIED = () =>
+  APIError.from("FORBIDDEN", NOSTR_ERROR_CODES.NOSTR_IDENTIFIER_NOT_VERIFIED);
 
 /** Keeps the pubkey rows in step when Better Auth deletes a nostr account. */
 export const removePubkeysOfAccount = async (
@@ -232,22 +261,25 @@ const defaultProfileMapping = ({ metadata }: NostrProfile): NostrMappedUser => {
   };
 };
 
+const loadProfile = (opts: NostrOptions | undefined, pubkey: string) =>
+  opts?.relays
+    ? fetchProfile(pubkey, {
+        relays: opts.relays,
+        timeoutMs: opts.relayTimeoutMs,
+      })
+    : null;
+
 /** Best effort, like the rest of relay access: any failure maps to no fields. */
 const userInfoFromProfile = async (
   ctx: GenericEndpointContext,
   opts: NostrOptions | undefined,
-  pubkey: string,
+  profile: NostrProfile | null,
   action: "create" | "update",
 ): Promise<
   ({ name?: string; image?: string } & Record<string, unknown>) | null
 > => {
-  if (!opts?.relays) return null;
+  if (!profile) return null;
   try {
-    const profile = await fetchProfile(pubkey, {
-      relays: opts.relays,
-      timeoutMs: opts.relayTimeoutMs,
-    });
-    if (!profile) return null;
     const {
       id: _id,
       email: _email,
@@ -257,7 +289,7 @@ const userInfoFromProfile = async (
       ...extra
     } = {
       ...defaultProfileMapping(profile),
-      ...(await opts.mapProfileToUser?.(profile)),
+      ...(await opts?.mapProfileToUser?.(profile)),
     };
     return {
       name,
@@ -308,13 +340,16 @@ const signUp = async (
   ctx: GenericEndpointContext,
   opts: NostrOptions | undefined,
   pubkey: string,
-): Promise<{ user: User; nostrPubkey: NostrPubkey }> => {
+): Promise<{ user: User; nostrPubkey: NostrPubkey; nip05: VerifiedNip05 }> => {
+  // Fetched before the transaction, so the relay and NIP-05 waits never hold it open.
+  const profile = await loadProfile(opts, pubkey);
+  const nip05 = await verifiedNip05(opts, profile, pubkey);
+  if (!nip05 && nip05Required(opts)) throw NIP05_NOT_VERIFIED();
+  const userInfo = await userInfoFromProfile(ctx, opts, profile, "create");
   const npub = nip19.npubEncode(pubkey);
   const email =
     (await opts?.generateEmail?.(npub, pubkey)) ??
     createPlaceholderEmail({ identifier: npub, namespace: "nostr" });
-  // Fetched before the transaction, so the relay wait never holds it open.
-  const userInfo = await userInfoFromProfile(ctx, opts, pubkey, "create");
 
   try {
     return await runWithTransaction(ctx.context.adapter, async () => {
@@ -345,7 +380,7 @@ const signUp = async (
           NOSTR_ERROR_CODES.NOSTR_FAILED_TO_CREATE_PUBKEY,
         );
       }
-      return { user, nostrPubkey };
+      return { user, nostrPubkey, nip05 };
     });
   } catch (error) {
     const nostrPubkey = await findPubkeyRow(ctx, pubkey);
@@ -353,7 +388,7 @@ const signUp = async (
       nostrPubkey &&
       (await ctx.context.internalAdapter.findUserById(nostrPubkey.userId));
     if (!nostrPubkey || !user) throw error;
-    return { user, nostrPubkey };
+    return { user, nostrPubkey, nip05 };
   }
 };
 
@@ -436,6 +471,7 @@ const signIn = async (
   let nostrPubkey = await findPubkeyRow(ctx, pubkey);
 
   let user: User | null = null;
+  let nip05: VerifiedNip05 = null;
 
   if (!nostrPubkey) {
     if (opts?.disableSignUp || opts?.disableImplicitSignUp) {
@@ -445,15 +481,31 @@ const signIn = async (
       );
     }
 
-    ({ user, nostrPubkey } = await signUp(ctx, opts, pubkey));
+    ({ user, nostrPubkey, nip05 } = await signUp(ctx, opts, pubkey));
   } else {
     user = await ctx.context.internalAdapter.findUserById(nostrPubkey.userId);
     if (!user) {
       throw APIError.from("UNAUTHORIZED", BASE_ERROR_CODES.USER_NOT_FOUND);
     }
 
+    const required = nip05Required(opts);
+    const profile =
+      required || opts?.overrideUserInfoOnSignIn
+        ? await loadProfile(opts, pubkey)
+        : null;
+    if (required) {
+      nip05 = await verifiedNip05(opts, profile, pubkey);
+      if (!nip05) {
+        await updatePubkeyColumns(ctx, nostrPubkey.id, {
+          nip05: null,
+          nip05VerifiedAt: null,
+        });
+        throw NIP05_NOT_VERIFIED();
+      }
+    }
+
     if (opts?.overrideUserInfoOnSignIn) {
-      const userInfo = await userInfoFromProfile(ctx, opts, pubkey, "update");
+      const userInfo = await userInfoFromProfile(ctx, opts, profile, "update");
       if (userInfo) {
         user =
           (await ctx.context.internalAdapter.updateUser(user.id, userInfo)) ??
@@ -477,7 +529,8 @@ const signIn = async (
     );
   }
 
-  await touchPubkey(ctx, nostrPubkey.id);
+  await updatePubkeyColumns(ctx, nostrPubkey.id, { lastUsedAt: new Date() });
+  if (nip05) await updatePubkeyColumns(ctx, nostrPubkey.id, nip05);
   await setSessionCookie(ctx, { session, user });
   return ctx.json({ session, user }, { status: 200 });
 };
@@ -631,6 +684,8 @@ export const listPubkeys = (_opts?: NostrOptions) =>
           name: row.name ?? null,
           createdAt: row.createdAt,
           lastUsedAt: row.lastUsedAt ?? null,
+          nip05: row.nip05 ?? null,
+          nip05VerifiedAt: row.nip05VerifiedAt ?? null,
         })),
       );
     },

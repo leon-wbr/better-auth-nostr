@@ -77,6 +77,8 @@ describe("GET /nostr/list-pubkeys", () => {
       name: null,
       createdAt: expect.any(Date),
       lastUsedAt: expect.any(Date),
+      nip05: null,
+      nip05VerifiedAt: null,
     });
     expect(pubkeys).toContainEqual({
       id: backup.id,
@@ -85,6 +87,8 @@ describe("GET /nostr/list-pubkeys", () => {
       name: "backup",
       createdAt: expect.any(Date),
       lastUsedAt: null,
+      nip05: null,
+      nip05VerifiedAt: null,
     });
   });
 
