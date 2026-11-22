@@ -56,8 +56,8 @@ const skA = generateSecretKey();
 const pkA = getPublicKey(skA);
 
 let nonce = await nonceFor(pkA);
-let token = await mint(`${AUTH}/nostr/login`, skA, nonce);
-const login = await post("/nostr/login", { nonce }, { authorization: token });
+let token = await mint(`${AUTH}/sign-in/nostr`, skA, nonce);
+const login = await post("/sign-in/nostr", { nonce }, { authorization: token });
 check(
   "login creates a user and a session",
   login.status === 200 && Boolean(login.json.user?.id),
@@ -70,7 +70,11 @@ const cookie = (login.cookie ?? "")
   .join("; ");
 const userId = login.json.user?.id;
 
-const replay = await post("/nostr/login", { nonce }, { authorization: token });
+const replay = await post(
+  "/sign-in/nostr",
+  { nonce },
+  { authorization: token },
+);
 check(
   "a replayed nonce is rejected",
   replay.status === 401,
@@ -107,8 +111,12 @@ check(
 );
 
 nonce = await nonceFor(pkB);
-token = await mint(`${AUTH}/nostr/login`, skB, nonce);
-const loginB = await post("/nostr/login", { nonce }, { authorization: token });
+token = await mint(`${AUTH}/sign-in/nostr`, skB, nonce);
+const loginB = await post(
+  "/sign-in/nostr",
+  { nonce },
+  { authorization: token },
+);
 check(
   "logging in with the linked key lands on the same user",
   loginB.status === 200 && loginB.json.user?.id === userId,
@@ -119,9 +127,9 @@ const skC = generateSecretKey();
 const pkC = getPublicKey(skC);
 
 nonce = await nonceFor(pkC);
-token = await mint("http://evil.example/api/auth/nostr/login", skC, nonce);
+token = await mint("http://evil.example/api/auth/sign-in/nostr", skC, nonce);
 const wrongUrl = await post(
-  "/nostr/login",
+  "/sign-in/nostr",
   { nonce },
   { authorization: token },
 );
@@ -132,9 +140,9 @@ check(
 );
 
 nonce = await nonceFor(pkC);
-token = await mint("http://evil.example/api/auth/nostr/login", skC, nonce);
+token = await mint("http://evil.example/api/auth/sign-in/nostr", skC, nonce);
 const spoofed = await post(
-  "/nostr/login",
+  "/sign-in/nostr",
   { nonce },
   {
     authorization: token,

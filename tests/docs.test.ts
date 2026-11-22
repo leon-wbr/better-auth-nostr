@@ -27,7 +27,7 @@ const endpoints = Object.values(serverExports.nostr().endpoints).map(
 
 describe("docs/reference.md", () => {
   it("documents every endpoint", () => {
-    expect(endpoints).toHaveLength(6);
+    expect(endpoints).toHaveLength(7);
     expect(undocumentedHeadings(endpoints)).toEqual([]);
   });
 

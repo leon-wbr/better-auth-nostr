@@ -41,6 +41,7 @@ describe("rate limits", () => {
   it.each([
     [NOSTR_PATHS.nonce, 10],
     [NOSTR_PATHS.login, 3],
+    ["/nostr/login", 3],
     [NOSTR_PATHS.addPubkey, 5],
   ])("returns 429 past the default limit on %s", async (path, max) => {
     const auth = createTestAuth(undefined, { rateLimit: { enabled: true } });

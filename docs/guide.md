@@ -162,7 +162,7 @@ The server queries only your `relays`. Unlike the browser, it never follows rela
 `signIn.nostr` makes two requests:
 
 1. `POST /nostr/nonce` with the signer's public key. The server stores a random single-use nonce bound to that key, valid for `nonceTtlMs` (5 minutes by default).
-2. `POST /nostr/login` with the nonce in the JSON body and a NIP-98 token in the `Authorization` header. The token is a kind `27235` event signed for that endpoint's absolute URL, the `post` method and a hash of the body.
+2. `POST /sign-in/nostr` with the nonce in the JSON body and a NIP-98 token in the `Authorization` header. The token is a kind `27235` event signed for that endpoint's absolute URL, the `post` method and a hash of the body.
 
 The login endpoint then:
 
@@ -210,7 +210,7 @@ Set `baseURL` on the server too. When it is neither configured nor supplied thro
 
 ### Rate limits
 
-The three sign-in endpoints carry their own rate limits, like Better Auth's magic-link and phone-number plugins: `/nostr/nonce` 10 requests per 60 seconds, `/nostr/login` 3 per 10 seconds (Better Auth's sign-in limit) and `/nostr/add-pubkey` 5 per 60 seconds, per client IP. They apply wherever Better Auth's rate limiter is on, which by default is production only. Override them with `rateLimit: { nonce: { window: 60, max: 20 } }`, or turn one off with Better Auth's `rateLimit.customRules`.
+The three sign-in endpoints carry their own rate limits, like Better Auth's magic-link and phone-number plugins: `/nostr/nonce` 10 requests per 60 seconds, `/sign-in/nostr` 3 per 10 seconds (Better Auth's sign-in limit) and `/nostr/add-pubkey` 5 per 60 seconds, per client IP. They apply wherever Better Auth's rate limiter is on, which by default is production only. Override them with `rateLimit: { nonce: { window: 60, max: 20 } }`, or turn one off with Better Auth's `rateLimit.customRules`.
 
 ## Other Better Auth plugins
 

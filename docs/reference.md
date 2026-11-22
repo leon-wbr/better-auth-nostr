@@ -31,7 +31,7 @@ Issues a single-use nonce bound to a public key. No session needed.
 - Response: `{ nonce }`.
 - Errors: a `getNonce` that returns an invalid value makes this a `500`.
 
-### POST /nostr/login
+### POST /sign-in/nostr
 
 Signs in with a NIP-98 token, creating the user on first sign-in unless `disableImplicitSignUp` is set. Sets the session cookie.
 
@@ -40,14 +40,20 @@ Signs in with a NIP-98 token, creating the user on first sign-in unless `disable
 - Response: `{ session, user }`.
 - Errors: `NOSTR_MISSING_TOKEN`, `NOSTR_INVALID_TOKEN`, `NOSTR_INVALID_EVENT`, `NOSTR_EVENT_EXPIRED`, `NOSTR_INVALID_NONCE`, `NOSTR_PUBKEY_NOT_REGISTERED`, `NOSTR_FAILED_TO_CREATE_PUBKEY`, and Better Auth's `USER_NOT_FOUND` (401, the key's user is gone), `FAILED_TO_CREATE_USER` (500) and `FAILED_TO_CREATE_SESSION` (500 when storage fails, 401 when a hook denies the session).
 
+Its path starts with `/sign-in`, so Better Auth's sign-in rules apply to it, such as the anonymous plugin linking a guest to the user who signs in.
+
+### POST /nostr/login
+
+Deprecated, removed in 1.0: the path of `/sign-in/nostr` before 0.9. It logs a warning the first time it is called, and accepts a token signed for either path.
+
 ### POST /nostr/add-pubkey
 
 Links the key that signed the token to the signed-in user. Needs a session, and like every session-authenticated Better Auth endpoint an `Origin` header matching `baseURL` (browsers send it; scripts must, or get `403`).
 
-- Header: `Authorization`, as for `/nostr/login` but signed for this endpoint's URL.
+- Header: `Authorization`, as for `/sign-in/nostr` but signed for this endpoint's URL.
 - Body: `{ nonce, name? }`, with `name` 1–120 characters.
 - Response: `{ pubkey }`, the `NostrPubkey` row. Linking a key the user already owns returns the existing row.
-- Errors: the token and nonce codes of `/nostr/login`, `NOSTR_PUBKEY_LINKED_TO_OTHER_USER` (409) and `NOSTR_FAILED_TO_CREATE_PUBKEY` (500). Without a session, `401`.
+- Errors: the token and nonce codes of `/sign-in/nostr`, `NOSTR_PUBKEY_LINKED_TO_OTHER_USER` (409) and `NOSTR_FAILED_TO_CREATE_PUBKEY` (500). Without a session, `401`.
 
 ### GET /nostr/list-pubkeys
 
@@ -82,7 +88,7 @@ Every action resolves to Better Auth's `{ data, error }` and never throws. `erro
 authClient.signIn.nostr(options?: SignerSource, fetchOptions?: BetterFetchOption)
 ```
 
-Fetches a nonce, signs the NIP-98 event and calls `/nostr/login`. `data` is `{ session, user }`. On success the session store refreshes, so `useSession` picks up the new user.
+Fetches a nonce, signs the NIP-98 event and calls `/sign-in/nostr`. `data` is `{ session, user }`. On success the session store refreshes, so `useSession` picks up the new user.
 
 ### nostr.addPubkey
 

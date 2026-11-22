@@ -1,6 +1,6 @@
 import { createAuthClient } from "better-auth/client";
 import { describe, expectTypeOf, it } from "vitest";
-import { nostrClient } from "../src/client";
+import { nostrClient, type SignerSource } from "../src/client";
 import { nostr } from "../src/index";
 import type { Nostr, NostrMappedUser, NostrPubkey } from "../src/types";
 
@@ -42,6 +42,16 @@ describe("relay options at the type level", () => {
       // @ts-expect-error email cannot be mapped from a kind 0 profile
       mapProfileToUser: () => ({ email: "alice@example.com" }),
     });
+  });
+
+  it("keeps signIn.nostr taking a signer source, not the endpoint's body", () => {
+    const client = createAuthClient({
+      baseURL: "http://localhost:3000",
+      plugins: [nostrClient()],
+    });
+    expectTypeOf(client.signIn.nostr)
+      .parameter(0)
+      .toEqualTypeOf<SignerSource | undefined>();
   });
 
   it("keeps Nostr as an alias of the NostrPubkey row type", () => {

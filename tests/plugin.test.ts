@@ -9,6 +9,7 @@ describe("nostr() server plugin factory", () => {
   it("registers the three endpoints", () => {
     const plugin = nostr();
     expect(plugin.endpoints.getNostrNonce).toBeDefined();
+    expect(plugin.endpoints.signInNostr).toBeDefined();
     expect(plugin.endpoints.loginNostr).toBeDefined();
     expect(plugin.endpoints.addPubkey).toBeDefined();
   });

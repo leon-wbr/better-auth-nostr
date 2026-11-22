@@ -306,6 +306,13 @@ type NostrClientActions<O extends RelayOptions> = O extends {
       nostr: Omit<NostrActions["nostr"], "getProfile">;
     };
 
+type NostrServerPlugin = ReturnType<typeof nostr>;
+
+/** The client's own `signIn.nostr` takes a signer, so the endpoint's body-shaped route stays out of its types. */
+type InferredServerPlugin = Omit<NostrServerPlugin, "endpoints"> & {
+  endpoints: Omit<NostrServerPlugin["endpoints"], "signInNostr">;
+};
+
 /** The client plugin. Its options are `RelayOptions`. */
 export const nostrClient = <O extends RelayOptions = RelayOptions>(
   relayOptions?: O,
@@ -313,7 +320,7 @@ export const nostrClient = <O extends RelayOptions = RelayOptions>(
   return {
     id: "nostr",
     /** @hidden */
-    $InferServerPlugin: {} as ReturnType<typeof nostr>,
+    $InferServerPlugin: {} as InferredServerPlugin,
     /** @hidden */
     getActions: ($fetch, $store, options): NostrClientActions<O> =>
       getNostrActions($fetch, { $store }, options, relayOptions),
@@ -321,6 +328,7 @@ export const nostrClient = <O extends RelayOptions = RelayOptions>(
     pathMethods: {
       [NOSTR_PATHS.nonce]: "POST",
       [NOSTR_PATHS.login]: "POST",
+      [NOSTR_PATHS.legacyLogin]: "POST",
       [NOSTR_PATHS.addPubkey]: "POST",
       [NOSTR_PATHS.listPubkeys]: "GET",
       [NOSTR_PATHS.updatePubkey]: "POST",

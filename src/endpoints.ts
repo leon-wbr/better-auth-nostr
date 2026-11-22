@@ -1,7 +1,9 @@
 /** Endpoint paths relative to Better Auth's base path. */
 export const NOSTR_PATHS = {
   nonce: "/nostr/nonce",
-  login: "/nostr/login",
+  login: "/sign-in/nostr",
+  /** @deprecated TODO(1.0): remove (#34). Use `login`. */
+  legacyLogin: "/nostr/login",
   addPubkey: "/nostr/add-pubkey",
   listPubkeys: "/nostr/list-pubkeys",
   updatePubkey: "/nostr/update-pubkey",

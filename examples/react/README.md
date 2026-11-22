@@ -57,10 +57,10 @@ Both paths require a working relay, so they are the one part of this example tha
 **Host-header spoofing.** With `baseURL` configured, the NIP-98 event is validated against the configured URL rather than the incoming `Host`. `npm run smoke` covers this, or by hand:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:5173/api/auth/nostr/login \
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:5173/api/auth/sign-in/nostr \
   -H 'content-type: application/json' -H 'origin: http://localhost:5173' \
   -H 'host: evil.example' -H 'x-forwarded-host: evil.example' \
-  -H "authorization: <a token signed for http://evil.example/api/auth/nostr/login>" \
+  -H "authorization: <a token signed for http://evil.example/api/auth/sign-in/nostr>" \
   -d '{"nonce":"<the nonce>"}'
 ```
 

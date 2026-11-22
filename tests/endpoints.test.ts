@@ -51,6 +51,6 @@ describe("endpointURL", () => {
     // The server only accepts the token when its own URL matches byte for byte.
     expect(result.error).toBeNull();
     expect(signed).toEqual([endpointURL(TEST_BASE_URL, NOSTR_PATHS.login)]);
-    expect(signed).toEqual([`${TEST_BASE_URL}/nostr/login`]);
+    expect(signed).toEqual([`${TEST_BASE_URL}/sign-in/nostr`]);
   });
 });
