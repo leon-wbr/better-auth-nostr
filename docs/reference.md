@@ -98,7 +98,7 @@ Same flow against `/nostr/add-pubkey`, with the current session. `name` is a lab
 authClient.nostr.listPubkeys(fetchOptions?: BetterFetchOption)
 ```
 
-Calls `GET /nostr/list-pubkeys`. `data` is the list of the user's keys.
+Calls `GET /nostr/list-pubkeys`. `data` is the list of the user's keys. The `listPubkeys` atom (`authClient.useListPubkeys()` in React) holds the same list and refetches after `addPubkey`, `updatePubkey`, `removePubkey` and sign-out.
 
 ### nostr.updatePubkey
 

@@ -240,7 +240,7 @@ describe("client sign-in", () => {
     const auth = createTestAuth();
     const primary = makeKeypair();
     const secondary = makeKeypair();
-    const { $store } = createTestStore();
+    const { $store, notified } = createTestStore();
 
     const actions = getNostrActions(createTestFetch(auth), { $store }, {
       baseURL: TEST_ORIGIN,
@@ -253,8 +253,33 @@ describe("client sign-in", () => {
     });
 
     expect(result.error).toBeNull();
+    expect(notified).toEqual(["$sessionSignal", "$listPubkeys"]);
     expect(result.data?.pubkey.publicKey).toBe(secondary.publicKey);
     expect(result.data?.pubkey.name).toBe("Backup key");
+  });
+
+  it("does not refresh the key list when the server rejects addPubkey", async () => {
+    const auth = createTestAuth();
+    const { $store, notified } = createTestStore();
+    const $fetch = createTestFetch(auth);
+    const staleNonceFetch = ((path: string, init?: any) =>
+      ($fetch as any)(
+        path,
+        path === "/nostr/add-pubkey"
+          ? { ...init, body: { nonce: "never-issued-nonce" } }
+          : init,
+      )) as any;
+    const actions = getNostrActions(staleNonceFetch, { $store }, {
+      baseURL: TEST_ORIGIN,
+    } as any);
+
+    await actions.signIn.nostr({ nsec: nsecFor(makeKeypair()) });
+    const result = await actions.nostr.addPubkey({
+      nsec: nsecFor(makeKeypair()),
+    });
+
+    expect(result.error).not.toBeNull();
+    expect(notified).toEqual(["$sessionSignal"]);
   });
 });
 

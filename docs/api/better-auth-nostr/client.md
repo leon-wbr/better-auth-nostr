@@ -350,11 +350,10 @@ The client plugin. Its options are `RelayOptions`.
 
 #### Returns
 
-`object`
-
-| Name | Type | Default value |
-| ------ | ------ | ------ |
-| `id` | `"nostr"` | `"nostr"` |
+| Name | Type | Default value | Description |
+| ------ | ------ | ------ | ------ |
+| `id` | `"nostr"` | `"nostr"` | - |
+| `getAtoms()` | (`$fetch`) => `object` | - | `listPubkeys` is a query atom over the signed-in user's keys, refreshed after a key is added, renamed or removed and after sign-out; with the React client it is `authClient.useListPubkeys()`. |
 
 ***
 

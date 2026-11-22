@@ -9,6 +9,8 @@ import type {
 } from "@better-auth/core";
 import type { BetterFetch, BetterFetchOption } from "@better-fetch/fetch";
 import type { Session, User } from "better-auth";
+import { useAuthQuery } from "better-auth/client";
+import { atom } from "nanostores";
 import type { EventTemplate, Event as NostrEvent } from "nostr-tools";
 import { verifyEvent } from "nostr-tools";
 import { getToken } from "nostr-tools/nip98";
@@ -138,6 +140,26 @@ const signVerified = async (
   return fresh;
 };
 
+/**
+ * Which successful requests refresh which atom. Better Auth applies these to
+ * calls through `authClient.nostr.*`; the actions below apply them to their
+ * own requests.
+ */
+const atomListeners = [
+  {
+    signal: "$listPubkeys",
+    matcher: (path: string) =>
+      path === NOSTR_PATHS.addPubkey ||
+      path === NOSTR_PATHS.updatePubkey ||
+      path === NOSTR_PATHS.removePubkey ||
+      path === "/sign-out",
+  },
+  {
+    signal: "$sessionSignal",
+    matcher: (path: string) => path === NOSTR_PATHS.login,
+  },
+] satisfies BetterAuthClientPlugin["atomListeners"];
+
 /** Builds the actions `nostrClient` installs; for wiring them into a custom client. */
 export const getNostrActions = (
   $fetch: BetterFetch,
@@ -145,6 +167,12 @@ export const getNostrActions = (
   options?: BetterAuthClientOptions,
   relayOptions: RelayOptions = {},
 ) => {
+  const notifyListeners = (path: NostrPath) => {
+    for (const { signal, matcher } of atomListeners) {
+      if (matcher(path)) $store.notify(signal);
+    }
+  };
+
   const mintToken = async (
     url: string,
     signer: NostrSigner,
@@ -215,10 +243,7 @@ export const getNostrActions = (
       ...fetchOptions,
     });
 
-    if (!response.error) {
-      $store.notify("$sessionSignal");
-    }
-
+    if (!response.error) notifyListeners(NOSTR_PATHS.login);
     return response;
   };
 
@@ -229,7 +254,7 @@ export const getNostrActions = (
     const authorized = await authorize(NOSTR_PATHS.addPubkey, addOptions);
     if (authorized.error) return authorized;
 
-    return await $fetch<{ pubkey: NostrPubkey }, ServerError>(
+    const response = await $fetch<{ pubkey: NostrPubkey }, ServerError>(
       NOSTR_PATHS.addPubkey,
       {
         method: "POST",
@@ -238,6 +263,8 @@ export const getNostrActions = (
         ...fetchOptions,
       },
     );
+    if (!response.error) notifyListeners(NOSTR_PATHS.addPubkey);
+    return response;
   };
 
   const signEvent = async (
@@ -315,6 +342,23 @@ export const nostrClient = <O extends RelayOptions = RelayOptions>(
     /** @hidden */
     getActions: ($fetch, $store, options): NostrClientActions<O> =>
       getNostrActions($fetch, { $store }, options, relayOptions),
+    /**
+     * `listPubkeys` is a query atom over the signed-in user's keys, refreshed
+     * after a key is added, renamed or removed and after sign-out; with the
+     * React client it is `authClient.useListPubkeys()`.
+     */
+    getAtoms: ($fetch) => {
+      const $listPubkeys = atom<unknown>();
+      const listPubkeys = useAuthQuery<NostrPubkey[]>(
+        $listPubkeys,
+        NOSTR_PATHS.listPubkeys,
+        $fetch,
+        { method: "GET" },
+      );
+      return { listPubkeys, $listPubkeys };
+    },
+    /** @hidden */
+    atomListeners,
     /** @hidden */
     pathMethods: {
       [NOSTR_PATHS.nonce]: "POST",
