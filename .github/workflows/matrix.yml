@@ -122,3 +122,49 @@ jobs:
           done
           cat wrangler.log
           exit 1
+
+  example:
+    name: example (${{ matrix.example }})
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - example: nextjs
+            serve: npm run build && npm start
+            origin: http://localhost:3000
+          - example: hono-workers
+            serve: npm run dev
+            origin: http://localhost:8787
+    env:
+      BETTER_AUTH_SECRET: only-for-ci-only-for-ci-only-for-ci
+      WRANGLER_SEND_METRICS: "false"
+      NEXT_TELEMETRY_DISABLED: "1"
+    defaults:
+      run:
+        working-directory: examples/${{ matrix.example }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install -g npm@11.6.2
+      - run: npm ci && npm run build
+        working-directory: .
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Sign in to the running example
+        run: |
+          (${{ matrix.serve }}) > server.log 2>&1 &
+          for _ in $(seq 90); do
+            if curl -sf -o /dev/null "${{ matrix.origin }}/api/auth/ok"; then
+              npm run smoke && exit 0
+              break
+            fi
+            sleep 2
+          done
+          cat server.log
+          exit 1

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>better-auth-nostr · Hono on Workers</title>
+    <script type="module" src="/client.js"></script>
+  </head>
+  <body style="font-family: system-ui; max-width: 640px; margin: 2rem auto">
+    <h1>Sign in with Nostr</h1>
+    <p id="status">Loading…</p>
+    <div id="signed-out" hidden>
+      <p>
+        <button type="button" id="extension">
+          Sign in with a browser extension (NIP-07)
+        </button>
+      </p>
+      <p>
+        <input id="nsec" aria-label="nsec" placeholder="nsec1…" size="66" />
+        <button type="button" id="generate">Generate</button>
+        <button type="button" id="with-nsec">Sign in with nsec</button>
+      </p>
+    </div>
+    <p id="signed-in" hidden>
+      <button type="button" id="sign-out">Sign out</button>
+    </p>
+    <p id="error" role="alert"></p>
+  </body>
+</html>

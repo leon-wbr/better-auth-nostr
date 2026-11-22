@@ -8,6 +8,7 @@ import type {
   ClientStore,
 } from "@better-auth/core";
 import type { BetterFetch, BetterFetchOption } from "@better-fetch/fetch";
+import type { Session, User } from "better-auth";
 import type { EventTemplate, Event as NostrEvent } from "nostr-tools";
 import { verifyEvent } from "nostr-tools";
 import { getToken } from "nostr-tools/nip98";
@@ -205,10 +206,7 @@ export const getNostrActions = (
     if (authorized.error) return authorized;
 
     const response = await $fetch<
-      {
-        session: { id: string; userId: string; expiresAt: Date };
-        user: { id: string; email: string; name: string };
-      },
+      { session: Session; user: User },
       ServerError
     >(NOSTR_PATHS.login, {
       method: "POST",

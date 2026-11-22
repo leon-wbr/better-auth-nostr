@@ -1,0 +1,23 @@
+{
+  "name": "better-auth-nostr-example-hono-workers",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:client": "esbuild src/client.ts --bundle --format=esm --outfile=public/client.js",
+    "dev": "npm run build:client && wrangler dev",
+    "deploy": "npm run build:client && wrangler deploy",
+    "typecheck": "tsc",
+    "smoke": "node ../../smoke/http.ts ${BETTER_AUTH_URL:-http://localhost:8787}"
+  },
+  "dependencies": {
+    "better-auth": "^1.7.0",
+    "better-auth-nostr": "file:../../",
+    "hono": "^4.13.20",
+    "nostr-tools": "^2.20.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.2",
+    "wrangler": "^4.166.0"
+  }
+}

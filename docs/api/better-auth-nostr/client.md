@@ -324,7 +324,7 @@ Builds the actions `nostrClient` installs; for wiring them into a custom client.
 
 | Name | Type |
 | ------ | ------ |
-| `signIn` | \{ `nostr`: (`signInOptions?`, `fetchOptions?`) => `Promise`\<`Error$1`\<`ServerError`\> \| `Data`\<\{ `session`: \{ `id`: `string`; `userId`: `string`; `expiresAt`: `Date`; \}; `user`: \{ `id`: `string`; `email`: `string`; `name`: `string`; \}; \}\>\>; \} |
+| `signIn` | \{ `nostr`: (`signInOptions?`, `fetchOptions?`) => `Promise`\<`Error$1`\<`ServerError`\> \| `Data`\<\{ `session`: \{ `userId`: `string`; `expiresAt`: `Date`; `token`: `string`; `ipAddress?`: `string` \| `null`; `userAgent?`: `string` \| `null`; `id`: `string`; `createdAt`: `Date`; `updatedAt`: `Date`; \}; `user`: \{ `id`: `string`; `createdAt`: `Date`; `updatedAt`: `Date`; `email`: `string`; `emailVerified`: `boolean`; `name`: `string`; `image?`: `string` \| `null`; \}; \}\>\>; \} |
 | `nostr` | \{ `addPubkey`: (`addOptions?`, `fetchOptions?`) => `Promise`\<`Error$1`\<`ServerError`\> \| `Data`\<\{ `pubkey`: [`NostrPubkey`](#nostrpubkey); \}\>\>; `signEvent`: (`template`, `source?`) => `Promise`\<`ActionResult`\<`NostrEvent`\>\>; `getProfile`: (`input`, `callOptions?`) => `Promise`\<`ActionResult`\<[`NostrProfile`](#nostrprofile) \| `null`\>\>; \} |
 | `$Infer` | \{ `Nostr`: [`NostrPubkey`](#nostrpubkey); \} |
 

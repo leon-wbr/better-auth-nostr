@@ -1,0 +1,26 @@
+{
+  "name": "better-auth-nostr-example-nextjs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "next typegen && tsc",
+    "smoke": "node ../../smoke/http.ts ${BETTER_AUTH_URL:-http://localhost:3000}"
+  },
+  "dependencies": {
+    "better-auth": "^1.7.0",
+    "better-auth-nostr": "file:../../",
+    "next": "^16.4.6",
+    "nostr-tools": "^2.20.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.2"
+  }
+}
