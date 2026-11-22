@@ -94,6 +94,8 @@ describe("createBunkerSigner input validation", () => {
 });
 
 describe("createNostrConnectSession", () => {
+  const relays: [string] = ["wss://relay.example.com"];
+
   it("builds a nostrconnect:// URI the signer can scan", () => {
     const session = createNostrConnectSession({
       relays: ["wss://relay.example.com"],
@@ -114,16 +116,27 @@ describe("createNostrConnectSession", () => {
     expect(url.searchParams.get("name")).toBe("Test App");
   });
 
-  it("defaults to a usable relay so the URI is never relay-less", () => {
+  it("falls back to the old default relay with a deprecation warning when relays are omitted", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // @ts-expect-error relays are required; omitting them is deprecated
     const session = createNostrConnectSession();
-    expect(
-      new URL(session.uri).searchParams.getAll("relay").length,
-    ).toBeGreaterThan(0);
+    expect(new URL(session.uri).searchParams.getAll("relay")).toEqual([
+      "wss://relay.nsec.app",
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/relays.*deprecated/),
+    );
+  });
+
+  it("does not warn when relays are passed", () => {
+    const warn = vi.spyOn(console, "warn");
+    createNostrConnectSession({ relays: ["wss://relay.example.com"] });
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("reuses a caller-supplied client key so sessions can be persisted", () => {
     const clientSecretKey = generateSecretKey();
-    const session = createNostrConnectSession({ clientSecretKey });
+    const session = createNostrConnectSession({ relays, clientSecretKey });
     expect(bytesToHex(session.clientSecretKey)).toBe(
       bytesToHex(clientSecretKey),
     );
@@ -131,12 +144,13 @@ describe("createNostrConnectSession", () => {
 
   it("mints a fresh secret per session", () => {
     const secretOf = (uri: string) => new URL(uri).searchParams.get("secret");
-    expect(secretOf(createNostrConnectSession().uri)).not.toBe(
-      secretOf(createNostrConnectSession().uri),
+    expect(secretOf(createNostrConnectSession({ relays }).uri)).not.toBe(
+      secretOf(createNostrConnectSession({ relays }).uri),
     );
   });
 
   it("rejects an empty relay list rather than emitting an unusable URI", () => {
+    // @ts-expect-error relays must name at least one relay
     expect(() => createNostrConnectSession({ relays: [] })).toThrow(/relay/i);
   });
 });

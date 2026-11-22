@@ -111,7 +111,7 @@ Two options set this up. Both are top-level options of `nostr()` and `nostrClien
 - `relays`: the relays to read from. No default.
 - `relayTimeoutMs`: how long to wait on relays, in milliseconds. Defaults to 5000.
 
-The `nostrconnect://` flow is the one exception: `createNostrConnectSession` falls back to `wss://relay.nsec.app` when you pass no `relays`, because the signer has to be told somewhere to answer.
+`createNostrConnectSession` needs `relays` too, to tell the signer where to answer. Before 1.0, calling it without them logs a deprecation warning and falls back to `wss://relay.nsec.app`; from 1.0 it throws.
 
 ### Showing a profile in the browser
 

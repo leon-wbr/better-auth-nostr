@@ -140,7 +140,7 @@ Options of `createNostrConnectSession`.
 | <a id="property-perms-1"></a> `perms?` | `string`[] | `["sign_event:27235"]` | NIP-46 permissions to request. The default only covers sign-in. |
 | <a id="property-metadata-1"></a> `metadata?` | `ClientMetadata` | `undefined` | `name`, `url` and `image` the remote signer shows while approving. |
 | <a id="property-pool-1"></a> `pool?` | `AbstractSimplePool` | `a new pool` | A `nostr-tools` relay pool. One you pass stays open on `close()`; one opened for you is closed. |
-| <a id="property-relays"></a> `relays?` | `string`[] | `["wss://relay.nsec.app"]` | Relays the remote signer should answer on. |
+| <a id="property-relays"></a> `relays` | \[`string`, `...string[]`\] | `undefined` | Relays the remote signer should answer on, at least one. This library never picks relays for you. |
 | <a id="property-secret"></a> `secret?` | `string` | `random` | The connection secret in the URI. |
 
 ***
@@ -438,7 +438,7 @@ Connects to a NIP-46 remote signer the user already has, addressed by a
 
 ### createNostrConnectSession()
 
-> **createNostrConnectSession**(`options?`): [`NostrConnectSession`](#nostrconnectsession)
+> **createNostrConnectSession**(`options`): [`NostrConnectSession`](#nostrconnectsession)
 
 Starts the client-initiated half of NIP-46: we mint a `nostrconnect://` URI
 for the user to scan, then wait for the remote signer to reach out to us.
@@ -450,7 +450,7 @@ nothing touches the network until `connect()` is awaited.
 
 | Parameter | Type |
 | ------ | ------ |
-| `options?` | [`NostrConnectOptions`](#nostrconnectoptions) |
+| `options` | [`NostrConnectOptions`](#nostrconnectoptions) |
 
 #### Returns
 
