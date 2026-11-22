@@ -270,7 +270,8 @@ const userInfoFromProfile = async (
 
 /**
  * Runs a storage call and turns a thrown error into a generic 500. The detail
- * goes to the server log only, never into the response body.
+ * goes to the server log only, never into the response body. An `APIError`
+ * from a hook (admin's `BANNED_USER`) is a deliberate answer and passes through.
  */
 const guardStorage = async <T>(
   ctx: {
@@ -284,6 +285,7 @@ const guardStorage = async <T>(
   try {
     return await run();
   } catch (cause) {
+    if (cause instanceof APIError) throw cause;
     ctx.context.logger.error(error.message, cause);
     throw APIError.from("INTERNAL_SERVER_ERROR", error);
   }
