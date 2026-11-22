@@ -54,7 +54,7 @@ describe("resolveSigner", () => {
       getPublicKey: async () => "explicit",
       signEvent: async (t: typeof template) => finalizeEvent(t, sk),
     };
-    const signer = resolveSigner({
+    const signer = await resolveSigner({
       signer: custom,
       nsec: nip19.nsecEncode(sk),
     });
@@ -63,14 +63,75 @@ describe("resolveSigner", () => {
 
   it("falls back to the nsec when no signer is given", async () => {
     const sk = generateSecretKey();
-    const signer = resolveSigner({ nsec: nip19.nsecEncode(sk) });
+    const signer = await resolveSigner({ nsec: nip19.nsecEncode(sk) });
     expect(await signer.getPublicKey()).toBe(getPublicKey(sk));
   });
 
-  it("throws an actionable error when nothing is available", () => {
-    expect(() => resolveSigner()).toThrow(
-      expect.objectContaining({ code: "NOSTR_NO_SIGNER" }),
-    );
+  it("throws an actionable error when nothing is available", async () => {
+    await expect(resolveSigner()).rejects.toMatchObject({
+      code: "NOSTR_NO_SIGNER",
+    });
+  });
+
+  describe("in a browser without an extension yet", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.stubGlobal("window", {});
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const injectExtension = () =>
+      Object.assign(window, {
+        nostr: { getPublicKey: async () => "late-pk", signEvent: vi.fn() },
+      });
+
+    it("waits for an extension that injects late", async () => {
+      const resolving = resolveSigner();
+      await vi.advanceTimersByTimeAsync(200);
+      injectExtension();
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(await (await resolving).getPublicKey()).toBe("late-pk");
+    });
+
+    it("fails with NOSTR_NO_SIGNER once extensionWaitMs has passed", async () => {
+      let settled = false;
+      const resolving = resolveSigner({ extensionWaitMs: 300 }).finally(() => {
+        settled = true;
+      });
+      const rejected = expect(resolving).rejects.toMatchObject({
+        code: "NOSTR_NO_SIGNER",
+      });
+
+      await vi.advanceTimersByTimeAsync(250);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(100);
+      await rejected;
+    });
+
+    it("waits about 500 ms by default", async () => {
+      let settled = false;
+      const resolving = resolveSigner().finally(() => {
+        settled = true;
+      });
+      const rejected = expect(resolving).rejects.toMatchObject({
+        code: "NOSTR_NO_SIGNER",
+      });
+
+      await vi.advanceTimersByTimeAsync(450);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(100);
+      await rejected;
+    });
+
+    it("does not wait with extensionWaitMs: 0", async () => {
+      await expect(resolveSigner({ extensionWaitMs: 0 })).rejects.toMatchObject(
+        { code: "NOSTR_NO_SIGNER" },
+      );
+    });
   });
 });
 
@@ -331,7 +392,7 @@ describe("createExtensionSigner", () => {
     vi.stubGlobal("window", {
       nostr: { getPublicKey: () => "ext-pk", signEvent: vi.fn() },
     });
-    expect(await resolveSigner().getPublicKey()).toBe("ext-pk");
+    expect(await (await resolveSigner()).getPublicKey()).toBe("ext-pk");
   });
 });
 

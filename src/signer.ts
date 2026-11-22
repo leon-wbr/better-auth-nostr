@@ -67,6 +67,10 @@ const DEFAULT_PERMS = ["sign_event:27235"];
 /** How long to wait on a remote signer before giving up. */
 export const DEFAULT_SIGNER_TIMEOUT_MS = 300_000;
 
+/** NIP-07 extensions inject `window.nostr` at `document_end`, a moment after load. */
+const DEFAULT_EXTENSION_WAIT_MS = 500;
+const EXTENSION_POLL_MS = 50;
+
 type WindowNostr = {
   getPublicKey: () => Promise<string> | string;
   signEvent: (event: EventTemplate) => Promise<NostrEvent> | NostrEvent;
@@ -164,16 +168,37 @@ export type SignerSource = {
    * @defaultValue 300000 (5 minutes)
    */
   timeoutMs?: number;
+  /**
+   * How long to wait for a NIP-07 extension to appear at `window.nostr` before
+   * failing with `NOSTR_NO_SIGNER`, for a click right after page load.
+   *
+   * @defaultValue 500
+   */
+  extensionWaitMs?: number;
+};
+
+const waitForExtension = async (waitMs: number) => {
+  const deadline = Date.now() + waitMs;
+  let extension = createExtensionSigner();
+  while (!extension && typeof window !== "undefined" && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, EXTENSION_POLL_MS));
+    extension = createExtensionSigner();
+  }
+  return extension;
 };
 
 /**
  * Picks the signer for a request: an explicitly passed one wins, then a raw
  * secret key, then a NIP-07 extension.
  */
-export const resolveSigner = (source?: SignerSource): NostrSigner => {
+export const resolveSigner = async (
+  source?: SignerSource,
+): Promise<NostrSigner> => {
   if (source?.signer) return source.signer;
   if (source?.nsec) return createPrivateKeySigner(source.nsec);
-  const extension = createExtensionSigner();
+  const extension = await waitForExtension(
+    source?.extensionWaitMs ?? DEFAULT_EXTENSION_WAIT_MS,
+  );
   if (extension) return extension;
   throw new NostrClientError(NOSTR_ERROR_CODES.NOSTR_NO_SIGNER);
 };

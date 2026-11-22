@@ -176,7 +176,7 @@ export const getNostrActions = (
    */
   const authorize = async (path: NostrPath, source?: SignerSource) => {
     try {
-      const signer = resolveSigner(source);
+      const signer = await resolveSigner(source);
       const publicKey = await signer.getPublicKey();
       const response = await $fetch<{ nonce: string }, ServerError>(
         NOSTR_PATHS.nonce,
@@ -247,7 +247,7 @@ export const getNostrActions = (
     source?: SignerSource,
   ): Promise<ActionResult<NostrEvent>> => {
     try {
-      const signer = resolveSigner(source);
+      const signer = await resolveSigner(source);
       const timeoutMs = source?.timeoutMs ?? DEFAULT_SIGNER_TIMEOUT_MS;
       const publicKey = await withTimeout(signer.getPublicKey(), timeoutMs);
       return ok(await signVerified(signer, template, publicKey, timeoutMs));
