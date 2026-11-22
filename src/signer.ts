@@ -277,7 +277,7 @@ export const createBunkerSigner = async (
   }
 
   const clientSecretKey = options.clientSecretKey ?? generateSecretKey();
-  const ownedPool = options.pool ? undefined : new SimplePool();
+  const ownedPool = options?.pool ? undefined : new SimplePool();
   const signer = BunkerSigner.fromBunker(clientSecretKey, pointer, {
     pool: options.pool ?? ownedPool,
     onauth: options.onAuthUrl,
@@ -301,11 +301,10 @@ export const createBunkerSigner = async (
 /** Options of `createNostrConnectSession`. */
 export interface NostrConnectOptions extends RemoteTransportOptions {
   /**
-   * Relays the remote signer should answer on.
-   *
-   * @defaultValue ["wss://relay.nsec.app"]
+   * Relays the remote signer should answer on, at least one. This library
+   * never picks relays for you.
    */
-  relays?: string[];
+  relays: [string, ...string[]];
   /**
    * The connection secret in the URI.
    *
@@ -337,25 +336,32 @@ export type NostrConnectSession = {
  * nothing touches the network until `connect()` is awaited.
  */
 export const createNostrConnectSession = (
-  options: NostrConnectOptions = {},
+  options: NostrConnectOptions,
 ): NostrConnectSession => {
-  const relays = options.relays ?? DEFAULT_NOSTR_CONNECT_RELAYS;
+  // TODO(1.0): throw instead of falling back (#34).
+  let relays: string[] | undefined = options?.relays;
+  if (!relays) {
+    console.warn(
+      `[better-auth-nostr] createNostrConnectSession without relays is deprecated and fails from 1.0; pass relays. Falling back to ${DEFAULT_NOSTR_CONNECT_RELAYS[0]}.`,
+    );
+    relays = DEFAULT_NOSTR_CONNECT_RELAYS;
+  }
   if (relays.length === 0) {
     throw new Error(
       "createNostrConnectSession: at least one relay is required",
     );
   }
 
-  const clientSecretKey = options.clientSecretKey ?? generateSecretKey();
+  const clientSecretKey = options?.clientSecretKey ?? generateSecretKey();
   const secret =
-    options.secret ?? bytesToHex(crypto.getRandomValues(new Uint8Array(16)));
+    options?.secret ?? bytesToHex(crypto.getRandomValues(new Uint8Array(16)));
 
   const uri = createNostrConnectURI({
     clientPubkey: derivePublicKey(clientSecretKey),
     relays,
     secret,
-    perms: options.perms ?? DEFAULT_PERMS,
-    ...options.metadata,
+    perms: options?.perms ?? DEFAULT_PERMS,
+    ...options?.metadata,
   });
 
   let started = false;
@@ -379,12 +385,12 @@ export const createNostrConnectSession = (
           ? AbortSignal.timeout(timeoutMsOrSignal)
           : timeoutMsOrSignal;
 
-      const ownedPool = options.pool ? undefined : new SimplePool();
+      const ownedPool = options?.pool ? undefined : new SimplePool();
       try {
         const signer = await BunkerSigner.fromURI(
           clientSecretKey,
           uri,
-          { pool: options.pool ?? ownedPool, onauth: options.onAuthUrl },
+          { pool: options?.pool ?? ownedPool, onauth: options?.onAuthUrl },
           signal,
         );
         return wrapBunker(signer, clientSecretKey, ownedPool);
