@@ -1,7 +1,9 @@
 import { createAuthClient } from "better-auth/client";
+import type { ReadableAtom } from "nanostores";
 import { nip19 } from "nostr-tools";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nostrClient } from "../src/client";
+import type { NostrPubkey } from "../src/types";
 import {
   cookiesFromResponse,
   createTestAuth,
@@ -381,7 +383,9 @@ describe("client actions", () => {
     const client = clientFor(createTestAuth());
     const main = makeKeypair();
     await client.signIn.nostr({ nsec: nip19.nsecEncode(main.secretKey) });
-    const atom = client.$store.atoms.listPubkeys;
+    const atom = client.$store.atoms.listPubkeys as ReadableAtom<{
+      data: NostrPubkey[] | null;
+    }>;
     const unsubscribe = atom.subscribe(() => {});
     const settlesOn = (expected: unknown) =>
       vi.waitFor(() => expect(atom.get().data).toEqual(expected));
