@@ -73,7 +73,7 @@ export const ERROR_DOCS: Record<NostrErrorCode, ErrorDoc> = {
   NOSTR_NO_SIGNER: {
     from: "client",
     status: "400",
-    when: "No `signer`, no `nsec` and no NIP-07 extension.",
+    when: "No `signer`, no `nsec` and no NIP-07 extension within `extensionWaitMs`.",
     fix: "Pass a `signer` or `nsec`, or ask the user to install a NIP-07 extension.",
   },
   NOSTR_SIGNER_TIMEOUT: {

@@ -165,7 +165,7 @@ The client reports these before or instead of a request, in the shape Better Aut
 
 | Code | Status | When | What to do |
 | --- | --- | --- | --- |
-| `NOSTR_NO_SIGNER` | 400 | No `signer`, no `nsec` and no NIP-07 extension. | Pass a `signer` or `nsec`, or ask the user to install a NIP-07 extension. |
+| `NOSTR_NO_SIGNER` | 400 | No `signer`, no `nsec` and no NIP-07 extension within `extensionWaitMs`. | Pass a `signer` or `nsec`, or ask the user to install a NIP-07 extension. |
 | `NOSTR_SIGNER_TIMEOUT` | 408 | The signer did not answer within `timeoutMs`. | Retry, or raise `timeoutMs` for a remote signer that waits on a person. |
 | `NOSTR_SIGNER_TOO_SLOW` | 400 | The signer approved so late that the server would reject the event. | Retry and approve within a minute. |
 | `NOSTR_SIGNER_CLOCK_SKEW` | 400 | The signer's clock runs ahead of this device's. | Fix the clock on the signing device. |

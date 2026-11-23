@@ -249,6 +249,7 @@ Without `signer` or `nsec`, the NIP-07 extension at `window.nostr` signs.
 | <a id="property-signer"></a> `signer?` | [`NostrSigner`](#nostrsigner) | `undefined` | Any `NostrSigner`: a bunker session, a hardware signer, a test double. Wins over `nsec`. |
 | <a id="property-nsec"></a> `nsec?` | `string` | `undefined` | A bech32 nsec or 64-character hex secret key. Used when no `signer` is given. |
 | <a id="property-timeoutms-1"></a> `timeoutMs?` | `number` | `300000 (5 minutes)` | How long to wait for the signer before failing with `NOSTR_SIGNER_TIMEOUT`. |
+| <a id="property-extensionwaitms"></a> `extensionWaitMs?` | `number` | `500` | How long to wait for a NIP-07 extension to appear at `window.nostr` before failing with `NOSTR_NO_SIGNER`, for a click right after page load. |
 
 ***
 

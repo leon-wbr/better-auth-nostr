@@ -23,6 +23,8 @@ Alby, nos2x and similar extensions inject `window.nostr`. Call the action withou
 await authClient.signIn.nostr();
 ```
 
+Extensions inject at `document_end`, so a click right after page load can come before `window.nostr` exists. The action waits up to `extensionWaitMs` for it (500 ms by default) before failing with `NOSTR_NO_SIGNER`. Pass `extensionWaitMs: 0` to fail at once, for example to show a "use another signer" choice without a delay.
+
 ### A private key (nsec)
 
 ```ts
