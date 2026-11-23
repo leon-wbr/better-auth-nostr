@@ -18,6 +18,7 @@ const createMemoryDb = (modelName: string): MemoryDB => ({
 export const createTestAuth = (
   options?: NostrOptions,
   {
+    plugins = [],
     user,
     databaseHooks,
     rateLimit,
@@ -27,7 +28,13 @@ export const createTestAuth = (
     database = memoryAdapter(db),
   }: Pick<
     BetterAuthOptions,
-    "user" | "databaseHooks" | "database" | "rateLimit" | "session" | "account"
+    | "plugins"
+    | "user"
+    | "databaseHooks"
+    | "database"
+    | "rateLimit"
+    | "session"
+    | "account"
   > & {
     db?: MemoryDB;
   } = {},
@@ -42,7 +49,7 @@ export const createTestAuth = (
     secret: "test-secret-do-not-use-in-production",
     database,
     emailAndPassword: { enabled: false },
-    plugins: [nostr(options)],
+    plugins: [nostr(options), ...plugins],
     advanced: { disableCSRFCheck: true },
   });
 };
@@ -69,6 +76,9 @@ const signToken = (keypair: Keypair, path: string, nonce: string) =>
   );
 
 export const signLoginToken = (keypair: Keypair, nonce: string) =>
+  signToken(keypair, "/sign-in/nostr", nonce);
+
+export const signLegacyLoginToken = (keypair: Keypair, nonce: string) =>
   signToken(keypair, "/nostr/login", nonce);
 
 export const signAddPubkeyToken = (keypair: Keypair, nonce: string) =>
@@ -85,7 +95,7 @@ export const prepareLogin = async (auth: TestAuth, keypair: Keypair) => {
   const nonce = await issueNonce(auth, keypair);
   const token = await signLoginToken(keypair, nonce);
   return (): Promise<Response> =>
-    auth.api.loginNostr({
+    auth.api.signInNostr({
       body: { nonce },
       headers: new Headers({ authorization: token }),
       asResponse: true,

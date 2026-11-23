@@ -77,6 +77,7 @@ const consumeNonce = async (
 const verifyNip98Request = async (
   ctx: GenericEndpointContext & { body: { nonce: string } },
   path: typeof NOSTR_PATHS.login | typeof NOSTR_PATHS.addPubkey,
+  legacyPath?: typeof NOSTR_PATHS.legacyLogin,
 ): Promise<string> => {
   const token = ctx.headers?.get("authorization");
   if (!token) {
@@ -92,15 +93,22 @@ const verifyNip98Request = async (
     throw APIError.from("BAD_REQUEST", NOSTR_ERROR_CODES.NOSTR_INVALID_TOKEN);
   });
 
-  const url = endpointURL(ctx.context.baseURL, path);
-  await validateEvent(event, url, "post", { nonce }).catch(() => {
-    throw APIError.from(
-      "UNAUTHORIZED",
-      validateEventTimestamp(event)
-        ? NOSTR_ERROR_CODES.NOSTR_INVALID_EVENT
-        : NOSTR_ERROR_CODES.NOSTR_EVENT_EXPIRED,
-    );
-  });
+  const validateFor = (signedPath: string) =>
+    validateEvent(event, endpointURL(ctx.context.baseURL, signedPath), "post", {
+      nonce,
+    });
+  await validateFor(path)
+    .catch((error) =>
+      legacyPath ? validateFor(legacyPath) : Promise.reject(error),
+    )
+    .catch(() => {
+      throw APIError.from(
+        "UNAUTHORIZED",
+        validateEventTimestamp(event)
+          ? NOSTR_ERROR_CODES.NOSTR_INVALID_EVENT
+          : NOSTR_ERROR_CODES.NOSTR_EVENT_EXPIRED,
+      );
+    });
 
   await consumeNonce(ctx, nonce, event.pubkey);
   return event.pubkey;
@@ -400,87 +408,110 @@ export const getNostrNonce = (opts?: NostrOptions) =>
     },
   );
 
-export const loginNostr = (opts?: NostrOptions) =>
-  createAuthEndpoint(
-    NOSTR_PATHS.login,
-    {
-      method: "POST",
-      body: z.object({
-        nonce: z.string().min(1, "nonce is required"),
-      }),
-      metadata: {
-        openapi: {
-          operationId: "loginNostr",
-          description: "Login using a NIP-98 signed HTTP token.",
-          responses: {
-            200: { description: "Session created." },
-            400: { description: "Bad request." },
-            401: { description: "Unauthorized." },
-          },
-        },
+const signInOptions = (operationId: string, description: string) => ({
+  method: "POST" as const,
+  body: z.object({
+    nonce: z.string().min(1, "nonce is required"),
+  }),
+  metadata: {
+    openapi: {
+      operationId,
+      description,
+      responses: {
+        200: { description: "Session created." },
+        400: { description: "Bad request." },
+        401: { description: "Unauthorized." },
       },
     },
-    async (ctx) => {
-      const pubkey = await verifyNip98Request(ctx, NOSTR_PATHS.login);
+  },
+});
 
-      let nostrPubkey = await findPubkeyRow(ctx, pubkey);
+const signIn = async (
+  ctx: GenericEndpointContext & { body: { nonce: string } },
+  opts: NostrOptions | undefined,
+  legacyPath?: typeof NOSTR_PATHS.legacyLogin,
+) => {
+  const pubkey = await verifyNip98Request(ctx, NOSTR_PATHS.login, legacyPath);
 
-      let user: User | null = null;
+  let nostrPubkey = await findPubkeyRow(ctx, pubkey);
 
-      if (!nostrPubkey) {
-        if (opts?.disableImplicitSignUp) {
-          throw APIError.from(
-            "UNAUTHORIZED",
-            NOSTR_ERROR_CODES.NOSTR_PUBKEY_NOT_REGISTERED,
-          );
-        }
+  let user: User | null = null;
 
-        ({ user, nostrPubkey } = await signUp(ctx, opts, pubkey));
-      } else {
-        user = await ctx.context.internalAdapter.findUserById(
-          nostrPubkey.userId,
-        );
-        if (!user) {
-          throw APIError.from("UNAUTHORIZED", BASE_ERROR_CODES.USER_NOT_FOUND);
-        }
-
-        if (opts?.overrideUserInfoOnSignIn) {
-          const userInfo = await userInfoFromProfile(
-            ctx,
-            opts,
-            pubkey,
-            "update",
-          );
-          if (userInfo) {
-            user =
-              (await ctx.context.internalAdapter.updateUser(
-                user.id,
-                userInfo,
-              )) ?? user;
-          }
-        }
-      }
-
-      const userId = nostrPubkey.userId;
-      const session = await guardStorage(
-        ctx,
-        BASE_ERROR_CODES.FAILED_TO_CREATE_SESSION,
-        () => ctx.context.internalAdapter.createSession(userId),
+  if (!nostrPubkey) {
+    if (opts?.disableImplicitSignUp) {
+      throw APIError.from(
+        "UNAUTHORIZED",
+        NOSTR_ERROR_CODES.NOSTR_PUBKEY_NOT_REGISTERED,
       );
-      // A null session can be a deliberate before-hook denial, so it stays a
-      // vague 401 rather than becoming a 500.
-      if (!session) {
-        throw APIError.from(
-          "UNAUTHORIZED",
-          BASE_ERROR_CODES.FAILED_TO_CREATE_SESSION,
+    }
+
+    ({ user, nostrPubkey } = await signUp(ctx, opts, pubkey));
+  } else {
+    user = await ctx.context.internalAdapter.findUserById(nostrPubkey.userId);
+    if (!user) {
+      throw APIError.from("UNAUTHORIZED", BASE_ERROR_CODES.USER_NOT_FOUND);
+    }
+
+    if (opts?.overrideUserInfoOnSignIn) {
+      const userInfo = await userInfoFromProfile(ctx, opts, pubkey, "update");
+      if (userInfo) {
+        user =
+          (await ctx.context.internalAdapter.updateUser(user.id, userInfo)) ??
+          user;
+      }
+    }
+  }
+
+  const userId = nostrPubkey.userId;
+  const session = await guardStorage(
+    ctx,
+    BASE_ERROR_CODES.FAILED_TO_CREATE_SESSION,
+    () => ctx.context.internalAdapter.createSession(userId),
+  );
+  // A null session can be a deliberate before-hook denial, so it stays a
+  // vague 401 rather than becoming a 500.
+  if (!session) {
+    throw APIError.from(
+      "UNAUTHORIZED",
+      BASE_ERROR_CODES.FAILED_TO_CREATE_SESSION,
+    );
+  }
+
+  await touchPubkey(ctx, nostrPubkey.id);
+  await setSessionCookie(ctx, { session, user });
+  return ctx.json({ session, user }, { status: 200 });
+};
+
+export const signInNostr = (opts?: NostrOptions) =>
+  createAuthEndpoint(
+    NOSTR_PATHS.login,
+    signInOptions("signInNostr", "Sign in with a NIP-98 signed HTTP token."),
+    (ctx) => signIn(ctx, opts),
+  );
+
+/**
+ * @deprecated TODO(1.0): remove (#34). Accepts tokens signed for either path
+ * while clients move to `/sign-in/nostr`.
+ */
+export const loginNostr = (opts?: NostrOptions) => {
+  let warned = false;
+  return createAuthEndpoint(
+    NOSTR_PATHS.legacyLogin,
+    signInOptions(
+      "loginNostr",
+      "Deprecated alias of /sign-in/nostr, removed in 1.0.",
+    ),
+    (ctx) => {
+      if (!warned) {
+        warned = true;
+        ctx.context.logger.warn(
+          "[better-auth-nostr] /nostr/login is deprecated and is removed in 1.0; sign in through /sign-in/nostr (better-auth-nostr's client does since 0.9).",
         );
       }
-
-      await touchPubkey(ctx, nostrPubkey.id);
-      await setSessionCookie(ctx, { session, user });
-      return ctx.json({ session, user }, { status: 200 });
+      return signIn(ctx, opts, NOSTR_PATHS.legacyLogin);
     },
   );
+};
 
 export const addPubkey = (_opts?: NostrOptions) =>
   createAuthEndpoint(

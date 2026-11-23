@@ -16,9 +16,9 @@ import {
  * The checks every NIP-98 endpoint has to make before trusting a request.
  * Both endpoints run the same table, so a check dropped from either fails here.
  */
-type Endpoint = "/nostr/login" | "/nostr/add-pubkey";
+type Endpoint = "/sign-in/nostr" | "/nostr/add-pubkey";
 
-const ENDPOINTS: Endpoint[] = ["/nostr/login", "/nostr/add-pubkey"];
+const ENDPOINTS: Endpoint[] = ["/sign-in/nostr", "/nostr/add-pubkey"];
 
 type TokenOptions = {
   url?: string;
@@ -63,8 +63,8 @@ const call = async (
   if (authorization !== undefined) headers.set("authorization", authorization);
   const request = { body: { nonce }, headers, asResponse: true } as const;
   const res =
-    path === "/nostr/login"
-      ? await auth.api.loginNostr(request)
+    path === "/sign-in/nostr"
+      ? await auth.api.signInNostr(request)
       : await auth.api.addPubkey(request);
   const body = (await res.json()) as { code?: string };
   return { status: res.status, code: body.code };
@@ -121,13 +121,13 @@ describe.each(ENDPOINTS)("NIP-98 checks on %s", (path) => {
     [
       "signed for another URL",
       "NOSTR_INVALID_EVENT",
-      () => ({ url: "https://evil.example/api/auth/nostr/login" }),
+      () => ({ url: "https://evil.example/api/auth/sign-in/nostr" }),
     ],
     [
       "signed for the other endpoint",
       "NOSTR_INVALID_EVENT",
       (_, path) => ({
-        url: `${TEST_BASE_URL}${path === "/nostr/login" ? "/nostr/add-pubkey" : "/nostr/login"}`,
+        url: `${TEST_BASE_URL}${path === "/sign-in/nostr" ? "/nostr/add-pubkey" : "/sign-in/nostr"}`,
       }),
     ],
     [

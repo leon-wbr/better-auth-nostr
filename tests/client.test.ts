@@ -122,7 +122,7 @@ describe("client sign-in", () => {
 
     await actions.signIn.nostr({ nsec: nsecFor(keypair) });
 
-    expect(seen).toEqual([`${TEST_BASE_URL}/nostr/login`]);
+    expect(seen).toEqual([`${TEST_BASE_URL}/sign-in/nostr`]);
   });
 
   it("completes a full sign-in against the real handler", async () => {
@@ -218,7 +218,7 @@ describe("client sign-in", () => {
     const staleNonceFetch = ((path: string, init?: any) =>
       ($fetch as any)(
         path,
-        path === "/nostr/login"
+        path === "/sign-in/nostr"
           ? { ...init, body: { nonce: "never-issued-nonce" } }
           : init,
       )) as any;

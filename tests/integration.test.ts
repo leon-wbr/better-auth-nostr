@@ -54,7 +54,7 @@ describe("POST /nostr/nonce", () => {
   });
 });
 
-describe("POST /nostr/login", () => {
+describe("POST /sign-in/nostr", () => {
   it("creates a user + session on first login", async () => {
     const auth = createTestAuth();
     const keypair = makeKeypair();
@@ -92,7 +92,7 @@ describe("POST /nostr/login", () => {
     const nonce = await issueNonce(auth, keypair);
     const token = await signLoginToken(keypair, nonce);
 
-    const first = await auth.api.loginNostr({
+    const first = await auth.api.signInNostr({
       body: { nonce },
       headers: new Headers({ authorization: token }),
       asResponse: true,
@@ -100,7 +100,7 @@ describe("POST /nostr/login", () => {
     expect(first.status).toBe(200);
 
     await expect(
-      auth.api.loginNostr({
+      auth.api.signInNostr({
         body: { nonce },
         headers: new Headers({ authorization: token }),
       }),
@@ -112,7 +112,7 @@ describe("POST /nostr/login", () => {
     nonce: string,
     token: string,
   ) =>
-    auth.api.loginNostr({
+    auth.api.signInNostr({
       body: { nonce },
       headers: new Headers({ authorization: token }),
       asResponse: true,
@@ -169,7 +169,7 @@ describe("POST /nostr/login", () => {
     const nonce = await issueNonce(auth, alice);
 
     await expect(
-      auth.api.loginNostr({
+      auth.api.signInNostr({
         body: { nonce },
         headers: new Headers({
           authorization: await signLoginToken(bob, nonce),
@@ -186,7 +186,7 @@ describe("POST /nostr/login", () => {
     const token = await signLoginToken(keypair, "bogus-nonce");
 
     await expect(
-      auth.api.loginNostr({
+      auth.api.signInNostr({
         body: { nonce: "bogus-nonce" },
         headers: new Headers({ authorization: token }),
       }),
@@ -201,7 +201,7 @@ describe("POST /nostr/login", () => {
     const token = await signLoginToken(keypair, nonce);
 
     await expect(
-      auth.api.loginNostr({
+      auth.api.signInNostr({
         body: { nonce },
         headers: new Headers({ authorization: token }),
       }),
@@ -217,7 +217,7 @@ describe("POST /nostr/login", () => {
     const nonce = await issueNonce(auth, keypair);
 
     await expect(
-      auth.api.loginNostr({ body: { nonce }, headers: new Headers() }),
+      auth.api.signInNostr({ body: { nonce }, headers: new Headers() }),
     ).rejects.toMatchObject({ body: { code: "NOSTR_MISSING_TOKEN" } });
   });
 

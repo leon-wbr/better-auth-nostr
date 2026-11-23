@@ -14,6 +14,7 @@ import {
   loginNostr,
   removePubkey,
   removePubkeysOfAccount,
+  signInNostr,
   updatePubkey,
 } from "./routes";
 import type { NostrOptions } from "./types";
@@ -67,6 +68,7 @@ export const nostr = (options?: NostrOptions) => {
     /** @hidden */
     endpoints: {
       getNostrNonce: getNostrNonce(options),
+      signInNostr: signInNostr(options),
       loginNostr: loginNostr(options),
       addPubkey: addPubkey(options),
       listPubkeys: listPubkeys(options),
@@ -114,7 +116,9 @@ export const nostr = (options?: NostrOptions) => {
     rateLimit: (
       Object.keys(DEFAULT_RATE_LIMITS) as (keyof typeof DEFAULT_RATE_LIMITS)[]
     ).map((endpoint) => ({
-      pathMatcher: (path: string) => path === NOSTR_PATHS[endpoint],
+      pathMatcher: (path: string) =>
+        path === NOSTR_PATHS[endpoint] ||
+        (endpoint === "login" && path === NOSTR_PATHS.legacyLogin),
       ...DEFAULT_RATE_LIMITS[endpoint],
       ...options?.rateLimit?.[endpoint],
     })),
