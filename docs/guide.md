@@ -79,6 +79,13 @@ await authClient.signIn.nostr({ signer });
 
 A remote signer is a live relay subscription, so its lifetime is yours to manage: call `close()` when you are done. That closes the subscription, and the relay pool too unless you supplied your own via `pool`.
 
+**Logging out.** `close()` leaves this client authorised on the signer, so a resumed session needs no new approval. When the user signs out for good, call `logout()` instead: it sends NIP-46 `logout`, which makes the signer revoke this client, then closes like `close()`, also when the signer refuses or does not answer in time. Then delete the persisted `clientSecretKey` and `bunkerUri`, since NIP-46 says a logged-out client key must not be reused.
+
+```ts
+await authClient.signOut();
+await signer.logout();
+```
+
 **Resuming.** To resume a session later without a second approval prompt, persist both `signer.clientSecretKey` and `signer.bunkerUri`, then hand them back to `createBunkerSigner(bunkerUri, { clientSecretKey })`. This works for either flow: a `nostrconnect://` session learns its signer's pubkey and relays during the handshake, and `bunkerUri` is how you keep them.
 
 **Timeouts.** Every remote call is bounded by `timeoutMs`: 5 minutes by default, and settable per request through `signIn.nostr({ signer, timeoutMs })`. Without one, a signer that never answers would leave the promise pending forever, since NIP-46 requests have no deadline of their own. A timeout fails with `NOSTR_SIGNER_TIMEOUT` (status 408).
