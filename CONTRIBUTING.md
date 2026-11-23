@@ -16,7 +16,7 @@ Thanks for looking. Every kind of help counts here, and most of it needs no code
 
 ## Reporting a security issue
 
-Please don't open a public issue for a vulnerability. Use GitHub's [private vulnerability reporting](https://github.com/leon-wbr/better-auth-nostr/security/advisories/new) instead, and include how to reproduce it. You will get an answer, and credit in the advisory if you want it.
+Please don't open a public issue for a vulnerability. Use GitHub's [private vulnerability reporting](https://github.com/leon-wbr/better-auth-nostr/security/advisories/new) instead. [SECURITY.md](SECURITY.md) says what to include, which versions get fixes and how quickly you'll hear back.
 
 ## Working on the code
 
