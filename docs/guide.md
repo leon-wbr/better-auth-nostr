@@ -190,6 +190,12 @@ await authClient.nostr.updatePubkey({ id, name: "Laptop" });
 await authClient.nostr.removePubkey({ id });
 ```
 
+For a list that stays current, the client also has a `listPubkeys` query atom, like the passkey plugin's `listPasskeys`. It refetches after a key is added, renamed or removed and after sign-out. With the React client:
+
+```tsx
+const { data: pubkeys, isPending } = authClient.useListPubkeys();
+```
+
 `lastUsedAt` is set on every sign-in and is `null` until a key's first one. Renaming and removing check that the key belongs to the session user, and answer `404 NOSTR_PUBKEY_NOT_FOUND` for one that doesn't, whether it belongs to someone else or doesn't exist. Removing needs a fresh session (Better Auth's `session.freshAge`, a day by default), like `unlinkAccount`.
 
 A user can't remove their last way to sign in. Removal is refused with `NOSTR_CANNOT_REMOVE_LAST_PUBKEY` when the key's own account row is the user's only one, unless `account.accountLinking.allowUnlinkingAll` is set. Another Nostr key, an email and password or a social account all count.

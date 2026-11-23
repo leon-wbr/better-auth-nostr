@@ -1,7 +1,9 @@
 import { createAuthClient } from "better-auth/client";
+import type { ReadableAtom } from "nanostores";
 import { nip19 } from "nostr-tools";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { nostrClient } from "../src/client";
+import type { NostrPubkey } from "../src/types";
 import {
   cookiesFromResponse,
   createTestAuth,
@@ -332,24 +334,27 @@ describe("account backfill for keys linked before 0.8", () => {
   });
 });
 
+const clientFor = (auth: TestAuth) => {
+  let cookie = "";
+  return createAuthClient({
+    baseURL: TEST_ORIGIN,
+    plugins: [nostrClient()],
+    fetchOptions: {
+      customFetchImpl: async (input, init) => {
+        const request = new Request(input, init);
+        if (cookie) request.headers.set("cookie", cookie);
+        const response = await auth.handler(request);
+        const set = response.headers.getSetCookie();
+        if (set.length) cookie = set.map((c) => c.split(";")[0]).join("; ");
+        return response;
+      },
+    },
+  });
+};
+
 describe("client actions", () => {
   it("lists, renames and removes keys through authClient.nostr", async () => {
-    const auth = createTestAuth();
-    let cookie = "";
-    const client = createAuthClient({
-      baseURL: TEST_ORIGIN,
-      plugins: [nostrClient()],
-      fetchOptions: {
-        customFetchImpl: async (input, init) => {
-          const request = new Request(input, init);
-          if (cookie) request.headers.set("cookie", cookie);
-          const response = await auth.handler(request);
-          const set = response.headers.getSetCookie();
-          if (set.length) cookie = set.map((c) => c.split(";")[0]).join("; ");
-          return response;
-        },
-      },
-    });
+    const client = clientFor(createTestAuth());
     const main = makeKeypair();
     await client.signIn.nostr({ nsec: nip19.nsecEncode(main.secretKey) });
     await client.nostr.addPubkey({
@@ -370,5 +375,45 @@ describe("client actions", () => {
     expect((await client.nostr.listPubkeys()).data).toEqual([
       expect.objectContaining({ publicKey: main.publicKey }),
     ]);
+  });
+
+  it("refreshes the listPubkeys atom after add, rename, remove and sign-out", async () => {
+    // The query atom only fetches in a browser.
+    vi.stubGlobal("window", {});
+    const client = clientFor(createTestAuth());
+    const main = makeKeypair();
+    await client.signIn.nostr({ nsec: nip19.nsecEncode(main.secretKey) });
+    const atom = client.$store.atoms.listPubkeys as ReadableAtom<{
+      data: NostrPubkey[] | null;
+    }>;
+    const unsubscribe = atom.subscribe(() => {});
+    const settlesOn = (expected: unknown) =>
+      vi.waitFor(() => expect(atom.get().data).toEqual(expected));
+
+    await settlesOn([expect.objectContaining({ publicKey: main.publicKey })]);
+
+    const backup = makeKeypair();
+    await client.nostr.addPubkey({
+      nsec: nip19.nsecEncode(backup.secretKey),
+      name: "backup",
+    });
+    await settlesOn([
+      expect.objectContaining({ publicKey: main.publicKey }),
+      expect.objectContaining({ publicKey: backup.publicKey, name: "backup" }),
+    ]);
+    const { id } = atom.get().data!.find((p) => p.name === "backup")!;
+
+    await client.nostr.updatePubkey({ id, name: "laptop" });
+    await settlesOn([
+      expect.objectContaining({ publicKey: main.publicKey }),
+      expect.objectContaining({ id, name: "laptop" }),
+    ]);
+
+    await client.nostr.removePubkey({ id });
+    await settlesOn([expect.objectContaining({ publicKey: main.publicKey })]);
+
+    await client.signOut();
+    await settlesOn(null);
+    unsubscribe();
   });
 });
